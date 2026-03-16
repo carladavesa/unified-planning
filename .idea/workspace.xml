@@ -6,8 +6,11 @@
   <component name="ChangeListManager">
     <list default="true" id="7c60bccf-105d-46ba-a2c0-79b47893c82f" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/unified_planning/io/pddl_reader.py" beforeDir="false" afterPath="$PROJECT_DIR$/unified_planning/io/pddl_reader.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/unified_planning/io/pddl_writer.py" beforeDir="false" afterPath="$PROJECT_DIR$/unified_planning/io/pddl_writer.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/15-puzzle/15Puzzle.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/15-puzzle/15Puzzle.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/dump-trucks/DumpTrucks.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/dump-trucks/DumpTrucks.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/PancakeSorting.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/PancakeSorting.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/plotting/Plotting.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/plotting/Plotting.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/puzznic/Puzznic.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/puzznic/Puzznic.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -18,6 +21,11 @@
     <option name="groupingKeys">
       <option value="directory" />
     </option>
+  </component>
+  <component name="CopilotPersistence">
+    <persistenceIdMap>
+      <entry key="_/Users/cds26/PycharmProjects/unified-planning" value="2YU5AraaukCMBQHOf5hit0YGmq2" />
+    </persistenceIdMap>
   </component>
   <component name="FileTemplateManagerImpl">
     <option name="RECENT_TEMPLATES">
@@ -78,6 +86,10 @@
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
   </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
   <component name="ProblemsViewState">
     <option name="selectedTabId" value="CurrentFile" />
   </component>
@@ -89,93 +101,93 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python tests.Doctests in builtins.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Doctests in fluents_set.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.pytest in test_ada.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python.15PuzzleNumeric.executor&quot;: &quot;Run&quot;,
-    &quot;Python.8Puzzle.executor&quot;: &quot;Run&quot;,
-    &quot;Python.8Puzzle_numeric.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Counters.executor&quot;: &quot;Run&quot;,
-    &quot;Python.KnightTour.executor&quot;: &quot;Run&quot;,
-    &quot;Python.NPuzzle.executor&quot;: &quot;Run&quot;,
-    &quot;Python.NPuzzleExplicit.executor&quot;: &quot;Run&quot;,
-    &quot;Python.NPuzzleImplicit.executor&quot;: &quot;Run&quot;,
-    &quot;Python.NPuzzleImplicitNumeric.executor&quot;: &quot;Run&quot;,
-    &quot;Python.NPuzzleNumeric.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PDDLPuzznic.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PancakeSortPlus.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PancakeSortPlus_Ints.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PancakeSorting.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PancakeSorting2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Plotting.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PlottingOld.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PlottingPDDL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PlottingSamePDDL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Puzznic.executor&quot;: &quot;Run&quot;,
-    &quot;Python.PuzznicPDDL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Puzznic_pddl.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Puzznic_scoring.executor&quot;: &quot;Run&quot;,
-    &quot;Python.RushHour-bool-example.executor&quot;: &quot;Run&quot;,
-    &quot;Python.RushHour-general.executor&quot;: &quot;Run&quot;,
-    &quot;Python.RushHour-old.executor&quot;: &quot;Run&quot;,
-    &quot;Python.RushHour-subtyping.executor&quot;: &quot;Run&quot;,
-    &quot;Python.RushHour.executor&quot;: &quot;Run&quot;,
-    &quot;Python.RushHour2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.RushHour_general_1.executor&quot;: &quot;Run&quot;,
-    &quot;Python.RushHour_specific_1.executor&quot;: &quot;Run&quot;,
-    &quot;Python.RushHour_specific_all.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Simulator.executor&quot;: &quot;Run&quot;,
-    &quot;Python.SimulatorPDDL.executor&quot;: &quot;Run&quot;,
-    &quot;Python.SimulatorUP.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Sokoban.executor&quot;: &quot;Run&quot;,
-    &quot;Python.Sokoban2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.anml.executor&quot;: &quot;Run&quot;,
-    &quot;Python.arrays_and_integers_remover.executor&quot;: &quot;Run&quot;,
-    &quot;Python.arrays_remover.executor&quot;: &quot;Run&quot;,
-    &quot;Python.baba-is-you.executor&quot;: &quot;Run&quot;,
-    &quot;Python.compilation_solving.executor&quot;: &quot;Run&quot;,
-    &quot;Python.count_remover.executor&quot;: &quot;Run&quot;,
-    &quot;Python.dag.executor&quot;: &quot;Run&quot;,
-    &quot;Python.effect.executor&quot;: &quot;Run&quot;,
-    &quot;Python.example.executor&quot;: &quot;Run&quot;,
-    &quot;Python.expression.executor&quot;: &quot;Run&quot;,
-    &quot;Python.factory.executor&quot;: &quot;Run&quot;,
-    &quot;Python.int_arrays_bits_remover.executor&quot;: &quot;Run&quot;,
-    &quot;Python.int_parameter_actions_remover.executor&quot;: &quot;Run&quot;,
-    &quot;Python.integers_remover.executor&quot;: &quot;Run&quot;,
-    &quot;Python.level0.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pddl.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pddl_reader.executor&quot;: &quot;Debug&quot;,
-    &quot;Python.pddl_writer.executor&quot;: &quot;Run&quot;,
-    &quot;Python.prova.executor&quot;: &quot;Run&quot;,
-    &quot;Python.python experiments/&lt;Domain&gt;/&lt;Domain&gt;.py --compilation &lt;Compilation&gt; --solving &lt;Solving&gt;.executor&quot;: &quot;Run&quot;,
-    &quot;Python.read_instance.executor&quot;: &quot;Run&quot;,
-    &quot;Python.simplifier.executor&quot;: &quot;Run&quot;,
-    &quot;Python.simulator.executor&quot;: &quot;Run&quot;,
-    &quot;Python.solving.executor&quot;: &quot;Run&quot;,
-    &quot;Python.test.executor&quot;: &quot;Run&quot;,
-    &quot;Python.test2.executor&quot;: &quot;Run&quot;,
-    &quot;Python.type_checker.executor&quot;: &quot;Run&quot;,
-    &quot;Python.type_manager.executor&quot;: &quot;Run&quot;,
-    &quot;Python.usertype_fluents_remover.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;extensions&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/Users/cds26/PycharmProjects/unified-planning/experiments/folding&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;run.code.analysis.last.selected.profile&quot;: &quot;pProject Default&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.lookFeel&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python tests.Doctests in builtins.executor": "Run",
+    "Python tests.Doctests in fluents_set.executor": "Run",
+    "Python tests.pytest in test_ada.py.executor": "Run",
+    "Python.15PuzzleNumeric.executor": "Run",
+    "Python.8Puzzle.executor": "Run",
+    "Python.8Puzzle_numeric.executor": "Run",
+    "Python.Counters.executor": "Run",
+    "Python.KnightTour.executor": "Run",
+    "Python.NPuzzle.executor": "Run",
+    "Python.NPuzzleExplicit.executor": "Run",
+    "Python.NPuzzleImplicit.executor": "Run",
+    "Python.NPuzzleImplicitNumeric.executor": "Run",
+    "Python.NPuzzleNumeric.executor": "Run",
+    "Python.PDDLPuzznic.executor": "Run",
+    "Python.PancakeSortPlus.executor": "Run",
+    "Python.PancakeSortPlus_Ints.executor": "Run",
+    "Python.PancakeSorting.executor": "Run",
+    "Python.PancakeSorting2.executor": "Run",
+    "Python.Plotting.executor": "Run",
+    "Python.PlottingOld.executor": "Run",
+    "Python.PlottingPDDL.executor": "Run",
+    "Python.PlottingSamePDDL.executor": "Run",
+    "Python.Puzznic.executor": "Run",
+    "Python.PuzznicPDDL.executor": "Run",
+    "Python.Puzznic_pddl.executor": "Run",
+    "Python.Puzznic_scoring.executor": "Run",
+    "Python.RushHour-bool-example.executor": "Run",
+    "Python.RushHour-general.executor": "Run",
+    "Python.RushHour-old.executor": "Run",
+    "Python.RushHour-subtyping.executor": "Run",
+    "Python.RushHour.executor": "Run",
+    "Python.RushHour2.executor": "Run",
+    "Python.RushHour_general_1.executor": "Run",
+    "Python.RushHour_specific_1.executor": "Run",
+    "Python.RushHour_specific_all.executor": "Run",
+    "Python.Simulator.executor": "Run",
+    "Python.SimulatorPDDL.executor": "Run",
+    "Python.SimulatorUP.executor": "Run",
+    "Python.Sokoban.executor": "Run",
+    "Python.Sokoban2.executor": "Run",
+    "Python.anml.executor": "Run",
+    "Python.arrays_and_integers_remover.executor": "Run",
+    "Python.arrays_remover.executor": "Run",
+    "Python.baba-is-you.executor": "Run",
+    "Python.compilation_solving.executor": "Run",
+    "Python.count_remover.executor": "Run",
+    "Python.dag.executor": "Run",
+    "Python.effect.executor": "Run",
+    "Python.example.executor": "Run",
+    "Python.expression.executor": "Run",
+    "Python.factory.executor": "Run",
+    "Python.int_arrays_bits_remover.executor": "Run",
+    "Python.int_parameter_actions_remover.executor": "Run",
+    "Python.integers_remover.executor": "Run",
+    "Python.level0.executor": "Run",
+    "Python.pddl.executor": "Run",
+    "Python.pddl_reader.executor": "Debug",
+    "Python.pddl_writer.executor": "Run",
+    "Python.prova.executor": "Run",
+    "Python.python experiments/<Domain>/<Domain>.py --compilation <Compilation> --solving <Solving>.executor": "Run",
+    "Python.read_instance.executor": "Run",
+    "Python.simplifier.executor": "Run",
+    "Python.simulator.executor": "Run",
+    "Python.solving.executor": "Run",
+    "Python.test.executor": "Run",
+    "Python.test2.executor": "Run",
+    "Python.type_checker.executor": "Run",
+    "Python.type_manager.executor": "Run",
+    "Python.usertype_fluents_remover.executor": "Run",
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "WebServerToolWindowFactoryState": "false",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "/Users/cds26/PycharmProjects/unified-planning/experiments/folding",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "run.code.analysis.last.selected.profile": "pProject Default",
+    "settings.editor.selected.configurable": "preferences.lookFeel",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/experiments/folding" />
@@ -207,6 +219,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/experiments/puzznic/Puzznic.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
@@ -230,6 +243,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
       <option name="SCRIPT_NAME" value="experiments/&lt;Domain&gt;/&lt;Domain&gt;.py" />
       <option name="PARAMETERS" value="--compilation &lt;Compilation&gt; --solving &lt;Solving&gt;" />
       <option name="SHOW_COMMAND_LINE" value="false" />
@@ -239,6 +253,10 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <list>
+      <item itemvalue="Python.Puzznic" />
+      <item itemvalue="Python.python experiments/&lt;Domain&gt;/&lt;Domain&gt;.py --compilation &lt;Compilation&gt; --solving &lt;Solving&gt;" />
+    </list>
     <recent_temporary>
       <list>
         <item itemvalue="Python.python experiments/&lt;Domain&gt;/&lt;Domain&gt;.py --compilation &lt;Compilation&gt; --solving &lt;Solving&gt;" />
@@ -250,8 +268,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-6a121458b545-JavaScript-PY-251.25410.159" />
-        <option value="bundled-python-sdk-e0ed3721d81e-36ea0e71a18c-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-251.25410.159" />
+        <option value="bundled-js-predefined-d6986cc7102b-9b0f141eb926-JavaScript-PY-253.31033.139" />
+        <option value="bundled-python-sdk-2653e85de345-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.31033.139" />
       </set>
     </attachedChunks>
   </component>
@@ -436,6 +454,7 @@
       <workItem from="1752591344423" duration="10402000" />
       <workItem from="1752659726553" duration="62000" />
       <workItem from="1752663445712" duration="1800000" />
+      <workItem from="1773672323654" duration="870000" />
     </task>
     <servers />
   </component>
@@ -557,5 +576,13 @@
     <SUITE FILE_PATH="coverage/unified_planning$arrays_remover.coverage" NAME="arrays_remover Coverage Results" MODIFIED="1747595091497" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/unified_planning/engines/compilers" />
     <SUITE FILE_PATH="coverage/unified_planning$Doctests_in_fluents_set.coverage" NAME="Doctests in fluents_set Coverage Results" MODIFIED="1727788437193" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/unified_planning/model/mixins" />
     <SUITE FILE_PATH="coverage/unified_planning$NPuzzleImplicitNumeric.coverage" NAME="NPuzzleImplicitNumeric Coverage Results" MODIFIED="1741873588835" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/experiments/n-puzzle" />
+  </component>
+  <component name="github-copilot-workspace">
+    <instructionFileLocations>
+      <option value=".github/instructions" />
+    </instructionFileLocations>
+    <promptFileLocations>
+      <option value=".github/prompts" />
+    </promptFileLocations>
   </component>
 </project>

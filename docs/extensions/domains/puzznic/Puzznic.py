@@ -1,12 +1,11 @@
 import subprocess
-from pathlib import Path
 from ast import literal_eval
 from unified_planning.shortcuts import *
 from docs.extensions.domains import compilation_solving
 import argparse
 import sys
 
-# Run: python -m docs.extensions.domains.puzznic.Puzznic --compilation integers --solving symk
+# Run: python -m docs.extensions.domains.puzznic.Puzznic --compilation up --solving fast-downward
 
 # --- Parser ---
 parser = argparse.ArgumentParser(description="Solve Puzznic")
@@ -30,7 +29,7 @@ columns = literal_eval(output[3].strip())
 n_blocks = rows*columns - len(undefined)
 
 # --- Problem ---
-puzznic_problem = unified_planning.model.Problem('puzznic_problem')
+puzznic_problem = Problem('puzznic_problem')
 
 Pattern = UserType('Pattern')
 

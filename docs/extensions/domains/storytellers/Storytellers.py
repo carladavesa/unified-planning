@@ -3,7 +3,7 @@ from docs.extensions.domains import compilation_solving
 import argparse
 import math
 
-# Run: python -m docs.extensions.domains.storytellers.Storytellers --compilation sets --solving fast-downward
+# Run: python -m docs.extensions.domains.storytellers.Storytellers --compilation sc --solving fast-downward
 
 # A set of storytellers tell their stories to different audiences.
 # The storytellers know different (possibly intersecting) sets of stories.

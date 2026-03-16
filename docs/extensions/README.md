@@ -157,7 +157,7 @@ python sokoban/sokoban.py --compilation up --solving fast-downward
 python counters/counters.py --compilation c --solving fast-downward
 ```
 
-### Understanding Command-Line Options
+### Command-Line Options
 
 For domain scripts:
 

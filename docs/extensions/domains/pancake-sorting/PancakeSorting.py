@@ -2,7 +2,7 @@ from unified_planning.shortcuts import *
 from docs.extensions.domains import compilation_solving
 import argparse
 
-# Run: python -m docs.extensions.domains.pancake-sorting.PancakeSorting --compilation integers --solving fast-downward
+# Run: python -m docs.extensions.domains.pancake-sorting.PancakeSorting --compilation int --solving fast-downward
 
 # --- Parser ---
 parser = argparse.ArgumentParser(description="Solve Pancake Sorting Numeric")

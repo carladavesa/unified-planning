@@ -2,7 +2,7 @@ from unified_planning.shortcuts import *
 from docs.extensions.domains import compilation_solving
 import argparse
 
-# Run: python -m docs.extensions.domains.plotting.Plotting --compilation count --solving fast-downward
+# Run: python -m docs.extensions.domains.plotting.Plotting --compilation c --solving fast-downward
 
 # --- Parser ---
 parser = argparse.ArgumentParser(description="Solve Plotting")
@@ -18,7 +18,7 @@ instance = ['RRRR','RRRR','RRRR','RGGB']
 remaining_blocks = 2
 
 # --- Problem ---
-plotting_problem = unified_planning.model.Problem('plotting_problem')
+plotting_problem = Problem('plotting_problem')
 
 Colour = UserType('Colour')
 R = Object('R', Colour) #RED
@@ -173,6 +173,6 @@ costs: Dict[Action, Expression] = {
 plotting_problem.add_quality_metric(MinimizeActionCosts(costs))
 
 # --- Compile and Solve ---
-assert compilation in ['count', 'count-int', 'count-int-num'], f"Unsupported compilation type: {compilation} for this domain!"
+assert compilation in ['c', 'ci', 'cin'], f"Unsupported compilation type: {compilation} for this domain!"
 
 compilation_solving.compile_and_solve(plotting_problem, solving, compilation)

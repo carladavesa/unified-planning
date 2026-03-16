@@ -28,7 +28,7 @@ row_goal = idx // rows
 
 # --- Problem ---
 # Vehicles can be cars (length 2), trucks (length 3), or 2x2 blocks.
-rush_hour_problem = unified_planning.model.Problem('rush_hour_problem')
+rush_hour_problem = Problem('rush_hour_problem')
 
 Vehicle = UserType('Vehicle')
 none = Object('none', Vehicle)

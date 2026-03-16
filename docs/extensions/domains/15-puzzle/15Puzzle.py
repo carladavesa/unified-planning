@@ -2,10 +2,10 @@ from docs.extensions.domains import compilation_solving
 from unified_planning.shortcuts import *
 import argparse
 
-# Run: python -m docs.extensions.domains.15-puzzle.15Puzzle --compilation ut-integers --solving fast-downward
+# Run: python -m docs.extensions.domains.15-puzzle.15Puzzle --compilation uti --solving fast-downward
 
 # --- Parser ---
-parser = argparse.ArgumentParser(description="Solve 15-Puzzle Numeric")
+parser = argparse.ArgumentParser(description="Solve 15-Puzzle")
 parser.add_argument('--compilation', type=str, help='Compilation strategy to apply')
 parser.add_argument('--solving', type=str, help='Planner to use')
 
@@ -21,14 +21,14 @@ n = 4
 l = 15
 
 # --- Problem ---
-npuzzle_problem = unified_planning.model.Problem('npuzzle_problem')
+npuzzle_problem = Problem('npuzzle_problem')
 
 puzzle = Fluent('puzzle', ArrayType(n, ArrayType(n, IntType(0,l))))
 npuzzle_problem.add_fluent(puzzle, default_initial_value=0)
 npuzzle_problem.set_initial_value(puzzle, initial_blocks)
 
 # --- Actions ---
-move_up = unified_planning.model.InstantaneousAction('move_up', r=IntType(0,n-1), c=IntType(0,n-1))
+move_up = InstantaneousAction('move_up', r=IntType(0,n-1), c=IntType(0,n-1))
 c = move_up.parameter('c')
 r = move_up.parameter('r')
 move_up.add_precondition(Equals(puzzle[r-1][c], 0))
@@ -36,7 +36,7 @@ move_up.add_precondition(Not(Equals(puzzle[r][c], 0)))
 move_up.add_effect(puzzle[r-1][c], puzzle[r][c])
 move_up.add_effect(puzzle[r][c], 0)
 
-move_down = unified_planning.model.InstantaneousAction('move_down', r=IntType(0,n-1), c=IntType(0,n-1))
+move_down = InstantaneousAction('move_down', r=IntType(0,n-1), c=IntType(0,n-1))
 c = move_down.parameter('c')
 r = move_down.parameter('r')
 move_down.add_precondition(Equals(puzzle[r+1][c], 0))
@@ -44,7 +44,7 @@ move_down.add_precondition(Not(Equals(puzzle[r][c], 0)))
 move_down.add_effect(puzzle[r+1][c], puzzle[r][c])
 move_down.add_effect(puzzle[r][c], 0)
 
-move_left = unified_planning.model.InstantaneousAction('move_left', r=IntType(0,n-1), c=IntType(0,n-1))
+move_left = InstantaneousAction('move_left', r=IntType(0,n-1), c=IntType(0,n-1))
 c = move_left.parameter('c')
 r = move_left.parameter('r')
 move_left.add_precondition(Equals(puzzle[r][c-1], 0))
@@ -52,7 +52,7 @@ move_left.add_precondition(Not(Equals(puzzle[r][c], 0)))
 move_left.add_effect(puzzle[r][c-1], puzzle[r][c])
 move_left.add_effect(puzzle[r][c], 0)
 
-move_right = unified_planning.model.InstantaneousAction('move_right', r=IntType(0,n-1), c=IntType(0,n-1))
+move_right = InstantaneousAction('move_right', r=IntType(0,n-1), c=IntType(0,n-1))
 c = move_right.parameter('c')
 r = move_right.parameter('r')
 move_right.add_precondition(Equals(puzzle[r][c+1], 0))
@@ -75,7 +75,6 @@ costs: Dict[Action, Expression] = {
 npuzzle_problem.add_quality_metric(MinimizeActionCosts(costs))
 
 # --- Compile and Solve ---
-assert compilation in ['integers', 'ut-integers', 'logarithmic'], \
-    f"Unsupported compilation type: {compilation} for this domain!"
+assert compilation in ['int', 'uti', 'log'], f"Unsupported compilation type: {compilation} for this domain!"
 
 compilation_solving.compile_and_solve(npuzzle_problem, solving, compilation)

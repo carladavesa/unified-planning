@@ -3,7 +3,7 @@ import argparse
 from unified_planning.shortcuts import *
 from docs.extensions.domains import compilation_solving
 
-# Run: python -m docs.extensions.domains.dump-trucks.DumpTrucks --compilation count --solving fast-downward
+# Run: python -m docs.extensions.domains.dump-trucks.DumpTrucks --compilation sc --solving fast-downward
 
 # Trucks deliver packages between locations. Packages are loaded one by one,
 # and each unload operation dumps the full truck content.
@@ -20,7 +20,7 @@ solving = args.solving
 n_packages = 10
 
 # --- Problem ---
-dump_trucks_problem = unified_planning.model.Problem('dump_trucks_problem')
+dump_trucks_problem = Problem('dump_trucks_problem')
 
 Location = UserType('Location')
 l1 = Object('l1', Location)
