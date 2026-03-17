@@ -1,8 +1,9 @@
 # Unified Planning Extensions
 
 > **Note:** This repository is a fork of the [Unified Planning (UP)](https://github.com/aiplan4eu/unified-planning) 
-> framework, extended with high-level data types (arrays, sets, bounded integers, etc.) and their corresponding 
-> compilers as presented in our paper.
+> framework, extended with high-level constructs: 
+> arrays, sets, bounded integer parameters in actions, integer range variables, and Boolean counting expressions,
+> along with automated compilation to PDDL.
 > 
 > For the original Unified Planning framework documentation, please see [README_UP_ORIGINAL.md](README_UP_ORIGINAL.md).
 
@@ -75,12 +76,12 @@ pip install up-fast-downward
 unified-planning/
 ├── README.md                           # This file
 ├── README_UP_ORIGINAL.md               # Original framework documentation
-├── unified_planning/                   # Core framework (includes our new compilers)
+├── unified_planning/                   # Core framework (includes our new extensions and compilers)
 └── docs/extensions/
     ├── simple_tutorial.py              # A minimal, didactic example demonstrating extensions
-    └── domains/                        # Comprehensive collection of paper benchmarks
+    └── domains/                        # Collection of paper benchmarks
         ├── compilation_solving.py      # Core script for applying compilation & solving strategies
-        ├── handcrafted_reader.py       # Script to read/evaluate handcrafted PDDL baselines
+        ├── handcrafted_reader.py       # Script to read/evaluate handcrafted PDDL models
         ├── 15-puzzle/                  # 15-Puzzle models and scripts
         ├── sokoban/                    # Sokoban models and scripts
         ├── dump-trucks/                # Dump-Trucks models and scripts
@@ -94,7 +95,7 @@ unified-planning/
 ## Compilation Pipelines
 
 To make high-level models compatible with standard planners, we use **compilation pipelines** that transform 
-advanced constructs into a representation compatible for the target planner.
+advanced constructs into a representation compatible for a target planner.
 
 
 ### Available Compilers
