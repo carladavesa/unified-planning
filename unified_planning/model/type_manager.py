@@ -35,6 +35,7 @@ from unified_planning.exceptions import UPTypeError
 from fractions import Fraction
 from typing import Optional, Dict, Tuple, cast
 
+
 class TypeManager:
     """Class that manages the :class:`Types <unified_planning.model.Type>` in the :class:`~unified_planning.Environment`."""
 

@@ -1262,13 +1262,13 @@ def _write_effect(
         and not effect.value.is_true()
         and not effect.value.is_false()
     )
-    if non_const_bool_ass and not rewrite_bool_assignments:
-        raise UPProblemDefinitionError(
-            "The problem has non-constant boolean assignments.This can't be directly written ",
-            "in PDDL, but it can be translated into a conditional effect maintaining the ",
-            "semantic. To enable this feature, set the flag rewrite_bool_assignments",
-            " to True in the PDDLWriter constructor.",
-        )
+    #if non_const_bool_ass and not rewrite_bool_assignments:
+    #    raise UPProblemDefinitionError(
+    #        "The problem has non-constant boolean assignments.This can't be directly written ",
+    #        "in PDDL, but it can be translated into a conditional effect maintaining the ",
+    #        "semantic. To enable this feature, set the flag rewrite_bool_assignments",
+    #        " to True in the PDDLWriter constructor.",
+    #    )
     forall_str = ""
     if effect.is_forall():
         mid_str = " ".join(
