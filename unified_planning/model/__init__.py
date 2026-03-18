@@ -73,6 +73,7 @@ from unified_planning.model.timing import (
     LeftOpenTimeInterval,
     RightOpenTimeInterval,
 )
+from unified_planning.model.presence import Presence
 from unified_planning.model.types import Type
 from unified_planning.model.variable import Variable, FreeVarsOracle
 from unified_planning.model.range_variable import RangeVariable
@@ -134,6 +135,7 @@ __all__ = [
     "OpenTimeInterval",
     "LeftOpenTimeInterval",
     "RightOpenTimeInterval",
+    "Presence",
     "Type",
     "Variable",
     "FreeVarsOracle",

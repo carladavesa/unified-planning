@@ -35,6 +35,7 @@ class OperatorKind(Enum):
     RANGE_VARIABLE_EXP = auto()
     OBJECT_EXP = auto()
     TIMING_EXP = auto()
+    PRESENT_EXP = auto()
     BOOL_CONSTANT = auto()
     INT_CONSTANT = auto()
     REAL_CONSTANT = auto()
