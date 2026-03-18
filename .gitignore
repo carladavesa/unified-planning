@@ -1,6 +1,7 @@
 unified_planning.egg-info/
 build/
 .idea/
+docs/api/
 .coverage
 .bsp/
 .scala-build/
