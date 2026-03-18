@@ -1,5 +1,6 @@
 import signal
 import time
+import rantanplan
 from unified_planning.shortcuts import *
 from unified_planning.engines import CompilationKind
 
@@ -16,8 +17,14 @@ COMPILATION_PIPELINES = {
     'uti': [
         CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
         CompilationKind.ARRAYS_REMOVING,
+        CompilationKind.GROUNDING,
         CompilationKind.INTEGERS_REMOVING,
-        #CompilationKind.USERTYPE_FLUENTS_REMOVING,
+        CompilationKind.USERTYPE_FLUENTS_REMOVING,
+    ],
+    'ptt': [
+        CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
+        CompilationKind.ARRAYS_REMOVING,
+        CompilationKind.PRECONDITIONS_TO_TABLE_SIMPLIFIER
     ],
     'log': [
         CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
@@ -33,7 +40,7 @@ COMPILATION_PIPELINES = {
         CompilationKind.ARRAYS_REMOVING,
         CompilationKind.COUNT_INT_REMOVING,
         CompilationKind.INTEGERS_REMOVING,
-        #CompilationKind.USERTYPE_FLUENTS_REMOVING,
+        CompilationKind.USERTYPE_FLUENTS_REMOVING,
     ],
     'cin': [ # numeric
         CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
@@ -238,7 +245,7 @@ def solve_problem(
                 else:
                     print("No solution found")
                     print(f"Status: {result.status}")
-
+                print(f"{len(problem.actions)} actions!")
                 signal.alarm(0)
                 solving_time = time.time() - start_time
                 return solving_time

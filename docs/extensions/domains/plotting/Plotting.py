@@ -14,7 +14,7 @@ compilation = args.compilation
 solving = args.solving
 
 # --- Instance (plt0_4_4_3_2) ---
-instance = ['RRRR','RRRR','RRRR','RGGB']
+instance = ['RGRGGR','RBGGGR','GRGRBR']
 remaining_blocks = 2
 
 # --- Problem ---

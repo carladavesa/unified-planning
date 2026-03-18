@@ -120,9 +120,9 @@ DEFAULT_ENGINES = {
         "unified_planning.engines.compilers.sets_remover",
         "SetsRemover",
     ),
-    "up_bounds_consistency_simplifier": (
-        "unified_planning.engines.compilers.bounds_consistency_simplifier",
-        "BoundsConsistencySimplifier",
+    "up_preconditions_to_table_simplifier": (
+        "unified_planning.engines.compilers.preconditions_to_table_simplifier",
+        "PreconditionsToTableSimplifier",
     ),
     "up_int_parameter_actions_remover": (
         "unified_planning.engines.compilers.int_parameter_actions_remover",
@@ -202,7 +202,7 @@ DEFAULT_ENGINES_PREFERENCE_LIST = [
     "up_arrays_remover",
     "up_arrays_logarithmic_remover",
     "up_sets_remover",
-    "up_bounds_consistency_simplifier",
+    "up_preconditions_to_table_simplifier",
     "up_int_parameter_actions_remover",
     "up_integers_remover",
     "up_int_arrays_bits_remover",
