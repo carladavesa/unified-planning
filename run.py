@@ -18,11 +18,13 @@ Unified Planning APIs. It avoids importing helper code from `docs/`.
 from __future__ import annotations
 
 import argparse
+import os.path
 import signal
 import time
 
 from domains import DOMAINS
 from domains.base import Domain, FunctionDomain
+from unified_planning.io import PDDLReader
 
 try:
     import rantanplan
@@ -343,8 +345,7 @@ def list_instances(domain: str) -> None:
         return
 
     try:
-        dom = _get_domain(module)
-        instances = dom.list_instances()
+        instances = module.list_instances()
     except Exception as e:
         print(f"Error reading instances from domain '{domain}': {e}")
         return
@@ -360,8 +361,8 @@ def list_instances(domain: str) -> None:
 
 def main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(prog="python run.py")
-    parser.add_argument("--domain", help="Domain name (e.g. pancake-sorting)")
-    parser.add_argument("--instance", default="default", help="Instance name")
+    parser.add_argument("--domain", help="Domain name (e.g. pancake-sorting) or path to PDDL domain file")
+    parser.add_argument("--instance", default="default", help="Instance name or path to PDDL problem file")
     parser.add_argument("--compilation", default="up", help="Compilation pipeline")
     parser.add_argument("--solving", default="fast-downward", help="Solver to use")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="Timeout in seconds")
@@ -382,12 +383,6 @@ def main(argv: Optional[list[str]] = None) -> None:
     if not args.domain:
         parser.error("--domain is required")
 
-    module = DOMAINS.get(args.domain)
-    if module is None:
-        parser.error(f"Domain '{args.domain}' not found")
-
-    dom = _get_domain(module)
-
     planner_params: Dict[str, Any] = {}
     for p in args.param:
         if "=" not in p:
@@ -395,8 +390,21 @@ def main(argv: Optional[list[str]] = None) -> None:
         k, v = p.split("=", 1)
         planner_params[k] = v
 
-    # Build the problem without CLI-driven parameter overrides.
-    problem = dom.build_problem(instance=args.instance)
+    if os.path.exists(args.domain) and os.path.exists(args.instance):
+        # crea problema llegint fitxers PDDL directament (domini i instància)
+        reader = PDDLReader()
+        problem = reader.parse_problem(args.domain, args.instance)
+
+    else:
+        # creem problema a través del codi Python de cada domini
+        module = DOMAINS.get(args.domain)
+        if module is None:
+            parser.error(f"Domain '{args.domain}' not found")
+
+        dom = _get_domain(module)
+
+        # Build the problem without CLI-driven parameter overrides.
+        problem = dom.build_problem(instance=args.instance)
 
     compile_and_solve(
         problem,

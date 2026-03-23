@@ -26,14 +26,12 @@ class Domain(ABC):
             A `unified_planning.model.Problem`.
         """
 
-    def list_instances(self) -> Dict[str, Dict[str, Any]]:
+    @abstractmethod
+    def list_instances(self):
         """Return a mapping of instance names to parameter dicts.
 
         Useful for `--list-instances` support in the runner.
-
-        Default implementation provides a single "default" instance.
         """
-        return {"default": {}}
 
 
 class FunctionDomain(Domain):
