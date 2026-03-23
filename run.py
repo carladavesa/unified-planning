@@ -364,7 +364,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(prog="python run.py")
     parser.add_argument("--domain", help="Domain name (e.g. pancake-sorting) or path to PDDL domain file")
     parser.add_argument("--instance", default="default", help="Instance name or path to PDDL problem file")
-    parser.add_argument("--compilation", default="up", help="Compilation pipeline")
+    parser.add_argument("--compilation", default="none", help="Compilation pipeline")
     parser.add_argument("--solving", default="fast-downward", help="Solver to use")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="Timeout in seconds")
     parser.add_argument("--list-domains", action="store_true", help="List available domains")
