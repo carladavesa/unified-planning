@@ -47,12 +47,12 @@ class CountersDomain(Domain):
     def list_instances(self) -> dict[str, dict[str, list]]:
         return {k: {f"{c} counters": v} for k, (c, v) in self._instances.items()}
 
-    def get_instance(self, instance: Optional[str] = None) -> list[int]:
-        """Return a stack instance."""
+    def get_instance(self, instance: Optional[str] = None) -> tuple[int, list[int]]:
+        """Return (max_int, counter_values) for the given instance."""
 
-        # Use pre-defined instances if available.
         if instance and instance in self._instances:
-            return list(self._instances[instance])
+            max_int, values = self._instances[instance]
+            return max_int, list(values)
         else:
             raise ValueError(f"Instance '{instance}' not found!")
 
@@ -68,12 +68,9 @@ class CountersDomain(Domain):
         Counter = UserType('Counter')
 
         value = Fluent('value', IntType(0, max_int_n), c=Counter)
-        max_int = Fluent('max_int', IntType(max_int_n, max_int_n))
         problem.add_fluent(value)
-        problem.add_fluent(max_int)
 
         # --- Initialisation ---
-        problem.set_initial_value(max_int, max_int_n)
         for c in range(counters):
             c_object = Object(f'c{c}', Counter)
             problem.add_object(c_object)

@@ -27,7 +27,7 @@ class Domain(ABC):
         """
 
     @abstractmethod
-    def list_instances(self):
+    def list_instances(self) -> Dict[str, Any]:
         """Return a mapping of instance names to parameter dicts.
 
         Useful for `--list-instances` support in the runner.
@@ -47,4 +47,4 @@ class FunctionDomain(Domain):
     def list_instances(self) -> Dict[str, Dict[str, Any]]:
         if self._instances_func:
             return self._instances_func()
-        return super().list_instances()
+        return {}
