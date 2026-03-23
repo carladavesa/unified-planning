@@ -109,7 +109,9 @@ def print_up_problem_size(problem, name: str = "") -> None:
     problem_str = str(problem)
     size = len(problem_str)
 
-    print("--- Problem Size --")
+    print(f"\n\n{'=' * 60}")
+    print(f"Problem Size")
+    print(f"{'=' * 60}\n")
     print(f"Number of actions: {len(problem.actions)}")
     print(f"Characters: {size}")
     print(f"Lines: {len(problem_str.splitlines())}")
