@@ -1,4 +1,4 @@
-# Unified Planning Extensions
+# Unified Planning ++
 
 > **Note:** This repository is a fork of the [Unified Planning (UP)](https://github.com/aiplan4eu/unified-planning) 
 > framework, extended with high-level constructs: 
