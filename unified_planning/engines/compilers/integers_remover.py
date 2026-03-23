@@ -303,11 +303,16 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             params: OrderedDict,
             solutions: List[dict],
             variables: bidict,
+            extra_preconditions: List[FNode] = [],
     ) -> List[Action]:
         new_actions = []
         for idx, solution in enumerate(solutions):
             action_name = f"{old_action.name}_d{idx}"
             new_action = InstantaneousAction(action_name, _parameters=params, _env=problem.environment)
+
+            # Non-arithmetic preconditions
+            for prec in extra_preconditions:
+                new_action.add_precondition(prec)
 
             # Precondition
             and_clauses = []
@@ -470,116 +475,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                     if new_fluent and new_value:
                         new_action.add_effect(new_fluent, new_value, TRUE(), effect.forall)
 
-    def _add_effects_for_solution_conditional(
-            self,
-            new_action: InstantaneousAction,
-            problem: Problem,
-            new_problem: Problem,
-            variables: bidict,
-            solutions: List[dict],
-            effects: List[Effect],
-    ) -> None:
-        """
-        Add conditional effects for a single action from multiple solutions.
-        Groups solutions by result value and creates one conditional effect per group.
-        Used when there are arithmetic effects but no arithmetic preconditions.
-        """
-        var_str_to_fnode = {str(var): fnode for fnode, var in variables.items()}
-
-        for effect in effects:
-            if effect.is_increase() or effect.is_decrease():
-                fluent = effect.fluent.fluent()
-                new_fluent = new_problem.fluent(fluent.name)(*effect.fluent.args)
-                fluent_var_str = str(effect.fluent)
-
-                try:
-                    delta = effect.value.constant_value()
-                    # Delta constant → comportament existent
-                    seen = set()
-                    for sol in solutions:
-                        cur_val = sol.get(fluent_var_str)
-                        if cur_val is None or cur_val in seen:
-                            continue
-                        seen.add(cur_val)
-                        next_val = (cur_val + delta) if effect.is_increase() else (cur_val - delta)
-                        new_obj = self._get_number_object(new_problem, next_val)
-                        all_same = all(s.get(fluent_var_str) == cur_val for s in solutions)
-                        cond = TRUE() if all_same else Equals(new_fluent, self._get_number_object(new_problem, cur_val))
-                        new_action.add_effect(new_fluent, new_obj, cond, effect.forall)
-
-                except:
-                    delta_var_str = str(effect.value)
-                    seen = set()
-                    for sol in solutions:
-                        cur_val = sol.get(fluent_var_str)
-                        delta_val = sol.get(delta_var_str)
-                        if cur_val is None or delta_val is None:
-                            continue
-                        key = (cur_val, delta_val)
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        next_val = (cur_val + delta_val) if effect.is_increase() else (cur_val - delta_val)
-                        new_obj = self._get_number_object(new_problem, next_val)
-
-                        # Condició: current_load == cur AND weight == delta_val
-                        old_obj = self._get_number_object(new_problem, cur_val)
-                        delta_obj = self._get_number_object(new_problem, delta_val)
-                        delta_fluent = new_problem.fluent(effect.value.fluent().name)(*effect.value.args)
-                        cond = And(
-                            Equals(new_fluent, old_obj),
-                            Equals(delta_fluent, delta_obj)
-                        ).simplify()
-                        new_action.add_effect(new_fluent, new_obj, cond, effect.forall)
-
-            elif effect.value.node_type in self.ARITHMETIC_OPS:
-                new_fluent = self._transform_node(problem, new_problem, effect.fluent)
-                print("condition:",  effect.condition)
-                base_cond = self._transform_node(problem, new_problem, effect.condition) or TRUE()
-
-                # Agrupa solucions per valor resultat
-                result_groups: dict[str, dict] = {}
-                for sol in solutions:
-                    result = self._evaluate_with_solution(new_problem, effect.value, sol)
-                    if result is None or result == effect.value:
-                        continue
-                    key = str(result)
-                    if key not in result_groups:
-                        result_groups[key] = {'value': result, 'solutions': []}
-                    result_groups[key]['solutions'].append(sol)
-
-                for data in result_groups.values():
-                    if len(data['solutions']) == len(solutions):
-                        # Totes les solucions donen el mateix resultat → sense condició
-                        new_action.add_effect(new_fluent, data['value'], base_cond, effect.forall)
-                    else:
-                        clauses = []
-                        for sol in data['solutions']:
-                            sol_conds = []
-                            for fnode, var in variables.items():
-                                var_name = str(var)
-                                if var_name not in sol:
-                                    continue
-                                cond = self._create_precondition_from_variable(
-                                    fnode, sol[var_name], new_problem
-                                )
-                                if cond:
-                                    sol_conds.append(cond)
-                            if sol_conds:
-                                clauses.append(And(sol_conds) if len(sol_conds) > 1 else sol_conds[0])
-
-                        if clauses:
-                            sols_or = Or(clauses) if len(clauses) > 1 else clauses[0]
-                            full_cond = And(base_cond, sols_or).simplify() if base_cond != TRUE() else sols_or
-                            new_action.add_effect(new_fluent, data['value'], full_cond, effect.forall)
-
-            else:
-                new_fluent = self._transform_node(problem, new_problem, effect.fluent)
-                new_value = self._transform_node(problem, new_problem, effect.value)
-                new_cond = self._transform_node(problem, new_problem, effect.condition) or TRUE()
-                if new_fluent and new_value:
-                    new_action.add_effect(new_fluent, new_value, new_cond, effect.forall)
-
     def _transform_action_integers(
             self, problem: Problem, new_problem: Problem, old_action: Action
     ) -> List[Action]:
@@ -597,7 +492,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             for effect in old_action.effects
         )
 
-        # No arithmetic anywhere → direct transformation, no CP-SAT needed
+        # No arithmetic anywhere: direct transformation, no CP-SAT needed
         if not has_arithmetic_preconditions and not has_arithmetic_effects:
             new_action = InstantaneousAction(old_action.name, _parameters=params, _env=problem.environment)
             for dp in old_action.preconditions:
@@ -620,10 +515,18 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
         variables = bidict({})
         cp_model_obj = cp_model.CpModel()
+        non_arithmetic_precs = []
 
-        result_var = add_cp_constraints(problem, And(old_action.preconditions), variables, cp_model_obj,
-                                        self._object_to_index)
-        cp_model_obj.Add(result_var == 1)
+        if has_arithmetic_preconditions:
+            result_var = add_cp_constraints(problem, And(old_action.preconditions), variables, cp_model_obj,
+                                            self._object_to_index)
+            cp_model_obj.Add(result_var == 1)
+        else:
+            for dp in old_action.preconditions:
+                transformed = self._transform_node(problem, new_problem, dp)
+                if transformed and transformed != TRUE():
+                    non_arithmetic_precs.append(transformed)
+
         add_effect_bounds_constraints(problem, variables, cp_model_obj, old_action.effects, self._object_to_index)
 
         solutions = solve_with_cp_sat(variables, cp_model_obj)
@@ -633,7 +536,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         self._index_to_object = {(t, idx): obj for (t, obj), idx in self._object_to_index.items()}
 
         return self._create_multiple_actions(
-            old_action, problem, new_problem, params, solutions, variables
+            old_action, problem, new_problem, params, solutions, variables, non_arithmetic_precs
         )
 
     def _transform_actions(self, problem: Problem, new_problem: Problem) -> Dict[Action, Action]:
