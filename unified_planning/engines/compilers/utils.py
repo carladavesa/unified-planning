@@ -13,10 +13,11 @@
 # limitations under the License.
 #
 """This module defines different utility functions for the compilers."""
-
+import bidict
+from ortools.sat.python import cp_model
 from fractions import Fraction
 import unified_planning as up
-from unified_planning.exceptions import UPConflictingEffectsException, UPUsageError
+from unified_planning.exceptions import UPConflictingEffectsException, UPUsageError, UPProblemDefinitionError
 from unified_planning.environment import Environment
 from unified_planning.model import (
     FNode,
@@ -552,3 +553,296 @@ def split_all_ands(exp_list: List[FNode]) -> List[FNode]:
                 end_list.append(exp)
         start_list = temp_list
     return end_list
+
+
+# --- INTEGERS UTILS ---
+
+class CPSolutionCollector(cp_model.CpSolverSolutionCallback):
+    """Collects all unique solutions from CP-SAT solver."""
+
+    def __init__(self, variables: list[cp_model.IntVar]):
+        cp_model.CpSolverSolutionCallback.__init__(self)
+        self.__variables = variables
+        self.__solutions = []
+        self.__seen = set()  # To detect duplicates
+
+    def on_solution_callback(self):
+        solution = {str(v): self.Value(v) for v in self.__variables}
+        sol_tuple = tuple(sorted(solution.items()))
+
+        if sol_tuple not in self.__seen:
+            self.__seen.add(sol_tuple)
+            self.__solutions.append(solution)
+
+    @property
+    def solutions(self) -> list[dict[str, int]]:
+        return self.__solutions
+
+def compute_integer_range(problem: Problem) -> tuple[int, int]:
+    """
+    Scan the entire problem to find the full range of integer values needed.
+
+    The range is determined by:
+    - Bounds of all integer fluents (lb, ub)
+    - Integer constants appearing in expressions (e.g. the 6 in a+b <= 6),
+      because these constants become Number objects in lt(val, n6).
+
+    We do NOT consider the possible values of arithmetic sub-expressions
+    (sums, differences, etc.) because those are always assigned to fluents
+    whose domain already bounds the result.
+
+    Returns (global_lb, global_ub).
+    """
+    global_lb = 0
+    global_ub = 0
+
+    # 1. Bounds from integer fluents
+    for fluent in problem.fluents:
+        if fluent.type.is_int_type():
+            lb = fluent.type.lower_bound
+            ub = fluent.type.upper_bound
+            if lb is not None:
+                global_lb = min(global_lb, lb)
+            if ub is not None:
+                global_ub = max(global_ub, ub)
+
+    # 2. Integer constants in expressions (e.g. comparisons like count <= 1)
+    all_expressions = []
+    for action in problem.actions:
+        all_expressions.extend(action.preconditions)
+        for effect in action.effects:
+            all_expressions.append(effect.value)
+            all_expressions.append(effect.condition)
+    all_expressions.extend(problem.goals)
+
+    def scan(node: FNode):
+        if node is None:
+            return
+        if node.is_int_constant():
+            v = node.constant_value()
+            nonlocal global_lb, global_ub
+            global_lb = min(global_lb, v)
+            global_ub = max(global_ub, v)
+        for arg in node.args:
+            scan(arg)
+
+    for expr in all_expressions:
+        if expr is not None:
+            scan(expr)
+    return global_lb, global_ub
+
+def solve_with_cp_sat(variables, cp_model_obj):
+    """
+    Use CP-SAT solver to enumerate all valid value assignments.
+
+    Returns a list of solutions, where each solution is a dictionary
+    mapping variable names to their assigned values.
+    """
+    solver = cp_model.CpSolver()
+    collector = CPSolutionCollector(list(variables.values()))
+    solver.parameters.enumerate_all_solutions = True
+    status = solver.Solve(cp_model_obj, collector)
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return None
+    solutions = collector.solutions
+    return solutions
+
+def add_cp_constraints(
+    problem: Problem,
+    node: FNode,
+    variables: bidict,
+    model: cp_model.CpModel,
+    object_to_index: dict,
+) -> any:
+    # -- Constants --
+    if node.is_constant():
+        return node.constant_value()
+
+    # -- Fluents --
+    if node.is_fluent_exp():
+        if node in variables:
+            return variables[node]
+        fluent = node.fluent()
+        if fluent.type.is_int_type():
+            var = model.NewIntVar(fluent.type.lower_bound, fluent.type.upper_bound, str(node))
+        elif fluent.type.is_user_type():
+            objects = list(problem.objects(fluent.type))
+            if not objects:
+                raise UPProblemDefinitionError(
+                    f"User type {fluent.type} has no objects, cannot create variable for fluent {fluent}"
+                )
+            var = model.NewIntVar(0, len(objects) - 1, str(node))
+            for idx, obj in enumerate(objects):
+                object_to_index[(fluent.type, obj)] = idx
+        else:
+            var = model.NewBoolVar(str(node))
+        variables[node] = var
+        return var
+
+    # -- Parameters --
+    if node.is_parameter_exp():
+        if node in variables:
+            return variables[node]
+        param = node.parameter()
+        assert param.type.is_user_type(), f"Parameter type {param.type} not supported"
+        objects = list(problem.objects(param.type))
+        if not objects:
+            raise UPProblemDefinitionError(
+                f"User type {param.type} has no objects, cannot create variable for parameter {param}"
+            )
+        var = model.NewIntVar(0, len(objects) - 1, str(node))
+        variables[node] = var
+        return var
+
+    # -- Equality --
+    if node.is_equals():
+        left_node, right_node = node.arg(0), node.arg(1)
+        if left_node.type.is_user_type():
+            left_var = add_cp_constraints(problem, left_node, variables, model, object_to_index)
+            if right_node.is_object_exp():
+                obj = right_node.object()
+                idx = object_to_index.get((left_node.type, obj))
+                if idx is not None:
+                    eq_var = model.NewBoolVar(f"eq_{id(node)}")
+                    model.Add(left_var == idx).OnlyEnforceIf(eq_var)
+                    model.Add(left_var != idx).OnlyEnforceIf(eq_var.Not())
+                    return eq_var
+            else:
+                right_var = add_cp_constraints(problem, right_node, variables, model, object_to_index)
+                eq_var = model.NewBoolVar(f"eq_{id(node)}")
+                model.Add(left_var == right_var).OnlyEnforceIf(eq_var)
+                model.Add(left_var != right_var).OnlyEnforceIf(eq_var.Not())
+                return eq_var
+        else:
+            left  = add_cp_constraints(problem, node.arg(0), variables, model, object_to_index)
+            right = add_cp_constraints(problem, node.arg(1), variables, model, object_to_index)
+            eq_var = model.NewBoolVar(f"eq_{id(node)}")
+            model.Add(left == right).OnlyEnforceIf(eq_var)
+            model.Add(left != right).OnlyEnforceIf(eq_var.Not())
+            return eq_var
+
+    # -- AND --
+    if node.is_and():
+        children = [add_cp_constraints(problem, a, variables, model, object_to_index) for a in node.args]
+        and_var = model.NewBoolVar(f"and_{id(node)}")
+        model.AddBoolAnd(*children).OnlyEnforceIf(and_var)
+        for child in children:
+            model.AddImplication(and_var, child)
+        return and_var
+
+    # -- OR --
+    if node.is_or():
+        children = [add_cp_constraints(problem, a, variables, model, object_to_index) for a in node.args]
+        or_var = model.NewBoolVar(f"or_{id(node)}")
+        model.AddBoolOr(*children).OnlyEnforceIf(or_var)
+        for child in children:
+            model.AddImplication(child, or_var)
+        return or_var
+
+    # -- IMPLIES --
+    if node.is_implies():
+        left  = add_cp_constraints(problem, node.arg(0), variables, model, object_to_index)
+        right = add_cp_constraints(problem, node.arg(1), variables, model, object_to_index)
+        impl_var = model.NewBoolVar(f"impl_{id(node)}")
+        model.AddBoolOr(left.Not(), right).OnlyEnforceIf(impl_var)
+        model.Add(left  == 1).OnlyEnforceIf(impl_var.Not())
+        model.Add(right == 0).OnlyEnforceIf(impl_var.Not())
+        return impl_var
+
+    # -- NOT --
+    if node.is_not():
+        inner = add_cp_constraints(problem, node.arg(0), variables, model, object_to_index)
+        not_var = model.NewBoolVar(f"not_{id(node)}")
+        model.Add(not_var == (1 - inner))
+        return not_var
+
+    # -- LT --
+    if node.is_lt():
+        left  = add_cp_constraints(problem, node.arg(0), variables, model, object_to_index)
+        right = add_cp_constraints(problem, node.arg(1), variables, model, object_to_index)
+        lt_var = model.NewBoolVar(f"lt_{id(node)}")
+        model.Add(left <  right).OnlyEnforceIf(lt_var)
+        model.Add(left >= right).OnlyEnforceIf(lt_var.Not())
+        return lt_var
+
+    # -- LE --
+    if node.is_le():
+        left  = add_cp_constraints(problem, node.arg(0), variables, model, object_to_index)
+        right = add_cp_constraints(problem, node.arg(1), variables, model, object_to_index)
+        le_var = model.NewBoolVar(f"le_{id(node)}")
+        model.Add(left <=  right).OnlyEnforceIf(le_var)
+        model.Add(left  > right).OnlyEnforceIf(le_var.Not())
+        return le_var
+
+    # -- PLUS --
+    if node.is_plus():
+        return sum(
+            add_cp_constraints(problem, a, variables, model, object_to_index)
+            for a in node.args
+        )
+
+    # -- MINUS --
+    if node.is_minus():
+        args = [add_cp_constraints(problem, a, variables, model, object_to_index) for a in node.args]
+        return args[0] if len(args) == 1 else args[0] - sum(args[1:])
+
+    # -- TIMES --
+    if node.is_times():
+        args = [add_cp_constraints(problem, a, variables, model, object_to_index) for a in node.args]
+        result = args[0]
+        for arg in args[1:]:
+            assert hasattr(arg, 'type'), \
+                f"TIMES not supported between linear expressions, only IntVars. Got: {type(arg)}"
+            temp = model.NewIntVar(arg.type.lower_bound, arg.type.upper_bound, f"mult_{id(node)}")
+            model.AddMultiplicationEquality(temp, result, arg)
+            result = temp
+        return result
+
+    raise NotImplementedError(f"Node type {node.node_type} not implemented in CP-SAT translation")
+
+def add_effect_bounds_constraints(
+        problem: Problem,
+        variables: bidict,
+        model: cp_model.CpModel,
+        effects: List[Effect],
+        object_to_index: dict,
+):
+    for effect in effects:
+        if not effect.fluent.is_fluent_exp():
+            continue
+        fluent = effect.fluent.fluent()
+        if not fluent.type.is_int_type():
+            continue
+
+        lb, ub = fluent.type.lower_bound, fluent.type.upper_bound
+        # Registers the fluent variable
+        fluent_var = add_cp_constraints(problem, effect.fluent, variables, model, object_to_index)
+
+        if effect.is_increase() or effect.is_decrease():
+
+            try:
+                delta = effect.value.constant_value()
+                result_expr = fluent_var + delta if effect.is_increase() else fluent_var - delta
+            except:
+                delta_expr = add_cp_constraints(problem, effect.value, variables, model, object_to_index)
+                result_expr = fluent_var + delta_expr if effect.is_increase() else fluent_var - delta_expr
+
+            if effect.condition is not None and not effect.condition.is_true():
+                cond_var = add_cp_constraints(problem, effect.condition, variables, model, object_to_index)
+                model.Add(result_expr >= lb).OnlyEnforceIf(cond_var)
+                model.Add(result_expr <= ub).OnlyEnforceIf(cond_var)
+            else:
+                model.Add(result_expr >= lb)
+                model.Add(result_expr <= ub)
+
+        else:
+            expr = add_cp_constraints(problem, effect.value, variables, model, object_to_index)
+            if effect.condition is not None and not effect.condition.is_true():
+                if effect.condition.is_false():
+                    continue
+                cond_var = add_cp_constraints(problem, effect.condition, variables, model, object_to_index)
+                model.Add(expr >= lb).OnlyEnforceIf(cond_var)
+                model.Add(expr <= ub).OnlyEnforceIf(cond_var)
+            else:
+                model.Add(expr >= lb)
+                model.Add(expr <= ub)

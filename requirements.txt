@@ -3,7 +3,7 @@ pyparsing
 networkx
 ConfigSpace
 numpy<2 # required as transitive dependencies seems to install version 2 by default that is incompatible with other dependecies
-pandas>=1.3.0,<2.0.0
+pandas>=2.0.0,<3.0.0
 openpyxl
 ortools
 bidict
