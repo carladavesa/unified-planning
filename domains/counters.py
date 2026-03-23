@@ -83,7 +83,7 @@ class CountersDomain(Domain):
         increment = InstantaneousAction('increment', c=Counter)
         c = increment.parameter('c')
         increment.add_precondition(LE(Plus(value(c), 1), max_int_n))
-        increment.add_increase_effect(value(c), 2)
+        increment.add_increase_effect(value(c), 1)
 
         decrement = InstantaneousAction('decrement', c=Counter)
         c = decrement.parameter('c')
