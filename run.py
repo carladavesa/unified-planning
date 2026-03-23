@@ -92,7 +92,7 @@ COMPILATION_PIPELINES = {
         CompilationKind.COUNT_INT_REMOVING,
         # CompilationKind.USERTYPE_FLUENTS_REMOVING,
     ],
-    "None": [],
+    "none": [],
 }
 
 
