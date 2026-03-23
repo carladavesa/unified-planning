@@ -5,12 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="7c60bccf-105d-46ba-a2c0-79b47893c82f" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/15-puzzle/15Puzzle.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/15-puzzle/15Puzzle.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/dump-trucks/DumpTrucks.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/dump-trucks/DumpTrucks.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/PancakeSorting.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/PancakeSorting.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/plotting/Plotting.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/plotting/Plotting.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/puzznic/Puzznic.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/puzznic/Puzznic.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/unified_planning/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/unified_planning/__init__.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
