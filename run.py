@@ -228,8 +228,9 @@ def solve_problem(
                     ]
                     print("\n".join(unsupported))
 
-                file = open("file.txt", "w", encoding="utf-8")
-                result = planner.solve(problem, output_stream=file)
+                #file = open("file.txt", "w", encoding="utf-8")
+                #result = planner.solve(problem, output_stream=file)
+                result = planner.solve(problem)
                 if result.plan is not None:
                     print("Solution found!\n")
                     plan = result.plan
@@ -274,12 +275,12 @@ def compile_and_solve(
     try:
         compiled_problem, comp_results, comp_time = compile_problem(problem, compilation, timeout)
 
-        print(f"\n{'=' * 60}")
-        print("Compiled Problem:")
-        print(f"{'=' * 60}\n")
-        print(compiled_problem)
+        #print(f"\n{'=' * 60}")
+        #print("Compiled Problem:")
+        #print(f"{'=' * 60}\n")
+        #print(compiled_problem)
 
-        print(f"  Compilation: {comp_time:.2f}s")
+        #print(f"  Compilation: {comp_time:.2f}s")
 
         remaining_timeout = max(1, timeout - int(comp_time))
         solve_time = solve_problem(
