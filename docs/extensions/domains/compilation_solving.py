@@ -17,7 +17,7 @@ COMPILATION_PIPELINES = {
         CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
         CompilationKind.ARRAYS_REMOVING,
         CompilationKind.INTEGERS_REMOVING,
-        #CompilationKind.USERTYPE_FLUENTS_REMOVING,
+        CompilationKind.USERTYPE_FLUENTS_REMOVING,
     ],
     'log': [
         CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
