@@ -59,7 +59,9 @@ COMPILATION_PIPELINES = {
     ],
     "log": [
         CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
-        CompilationKind.ARRAYS_LOGARITHMIC_REMOVING,
+        CompilationKind.ARRAYS_REMOVING,
+        CompilationKind.GROUNDING,
+        CompilationKind.LOGARITHMIC_REMOVING,
     ],
     "c": [
         CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
