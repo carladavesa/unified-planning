@@ -19,7 +19,7 @@ import unified_planning.engines as engines
 from bidict import bidict
 from ortools.sat.python import cp_model
 from unified_planning.engines.compilers.utils import (
-    add_cp_constraints, add_effect_bounds_constraints, compute_integer_range, solve_with_cp_sat
+    add_cp_constraints, add_effect_bounds_constraints, compute_integer_range, solve_with_cp_sat, requires_arithmetic
 )
 from typing import Any
 from unified_planning.model.expression import ListExpression
@@ -153,20 +153,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                 f"Number object 'n{value}' not found. "
                 f"Ensure _compute_number_range covers all needed values."
             )
-
-    def _requires_cp_in_condition(self, node: FNode) -> bool:
-        """
-        Determine if a condition requires CP-SAT solver.
-
-        Returns True if the condition contains arithmetic operations or
-        integer comparisons that need to be solved via constraint programming.
-        This includes arithmetic expressions and comparisons over integer domains.
-        """
-        if node.node_type in self.ARITHMETIC_OPS:
-            return True
-        if node.is_lt() or node.is_le():
-            return True
-        return any(self._requires_cp_in_condition(arg) for arg in node.args)
 
     # ==================== NODE TRANSFORMATION ====================
 
@@ -447,7 +433,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
             elif effect.value.node_type in self.ARITHMETIC_OPS:
                 new_fluent = self._transform_node(problem, new_problem, effect.fluent)
-                if self._requires_cp_in_condition(effect.condition):
+                if requires_arithmetic(effect.condition):
                     new_cond = self._evaluate_with_solution(new_problem, effect.condition, solution)
                 else:
                     new_cond = self._transform_node(problem, new_problem, effect.condition) or TRUE()
@@ -460,7 +446,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                 new_value = self._transform_node(problem, new_problem, effect.value)
 
                 if effect.condition is not None and not effect.condition.is_true():
-                    if self._requires_cp_in_condition(effect.condition):
+                    if requires_arithmetic(effect.condition):
                         expansions = self._expand_condition_with_cp(
                             problem, new_problem, effect.condition, solution
                         )
@@ -481,14 +467,14 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         params = OrderedDict(((p.name, p.type) for p in old_action.parameters))
 
         # Check if preconditions require CP-SAT
-        has_arithmetic_preconditions = any(self._requires_cp_in_condition(p) for p in old_action.preconditions)
+        has_arithmetic_preconditions = any(requires_arithmetic(p) for p in old_action.preconditions)
 
         # Check if effects require CP-SAT
         has_arithmetic_effects = any(
             effect.value.node_type in self.ARITHMETIC_OPS
             or effect.is_increase()
             or effect.is_decrease()
-            or self._requires_cp_in_condition(effect.condition)
+            or requires_arithmetic(effect.condition)
             for effect in old_action.effects
         )
 
@@ -581,13 +567,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
     # ==================== GOALS TRANSFORMATION ====================
 
-    def _requires_arithmetic(self, node: FNode) -> bool:
-        from unified_planning.model.operators import OperatorKind
-        ARITHMETIC_OPS = {OperatorKind.PLUS, OperatorKind.MINUS, OperatorKind.TIMES, OperatorKind.DIV}
-        if node.node_type in ARITHMETIC_OPS or node.is_lt() or node.is_le():
-            return True
-        return any(self._requires_arithmetic(arg) for arg in node.args)
-
     def _evaluate_goal_in_initial_state(self, problem: Problem, goal: FNode) -> bool:
         """Evaluates the goal initial value."""
 
@@ -664,7 +643,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         arithmetic_goals = []
         direct_goals = []
         for goal in problem.goals:
-            if self._requires_arithmetic(goal):
+            if requires_arithmetic(goal):
                 arithmetic_goals.append(goal)
             else:
                 direct_goals.append(goal)

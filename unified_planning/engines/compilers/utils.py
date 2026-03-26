@@ -578,6 +578,13 @@ class CPSolutionCollector(cp_model.CpSolverSolutionCallback):
     def solutions(self) -> list[dict[str, int]]:
         return self.__solutions
 
+def requires_arithmetic(node: FNode) -> bool:
+    from unified_planning.model.operators import OperatorKind
+    ARITHMETIC_OPS = {OperatorKind.PLUS, OperatorKind.MINUS, OperatorKind.TIMES, OperatorKind.DIV}
+    if node.node_type in ARITHMETIC_OPS or node.is_lt() or node.is_le():
+        return True
+    return any(requires_arithmetic(arg) for arg in node.args)
+
 def compute_integer_range(problem: Problem) -> tuple[int, int]:
     """
     Scan the entire problem to find the full range of integer values needed.
