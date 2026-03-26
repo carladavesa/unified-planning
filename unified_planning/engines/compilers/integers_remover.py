@@ -193,7 +193,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
         return em.create_node(node.node_type, tuple(new_args)).simplify()
 
-    # ==================== EFFECT TRANSFORMATION ====================
+    # ==================== ACTION TRANSFORMATION ====================
 
     def _transform_increase_decrease_effect(
             self,
@@ -300,7 +300,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             for prec in extra_preconditions:
                 new_action.add_precondition(prec)
 
-            # Precondition
+            # Add preconditions from solution
             and_clauses = []
             for fnode, var in variables.items():
                 var_name = str(var)
@@ -396,9 +396,9 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             problem: Problem,
             new_problem: Problem,
             solution: dict,
-            normalized_effects: List[Effect],
+            old_effects: List[Effect],
     ) -> None:
-        for effect in normalized_effects:
+        for effect in old_effects:
             if effect.is_increase() or effect.is_decrease():
                 fluent = effect.fluent.fluent()
                 new_fluent = new_problem.fluent(fluent.name)(*effect.fluent.args)
@@ -461,41 +461,38 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                     if new_fluent and new_value:
                         new_action.add_effect(new_fluent, new_value, TRUE(), effect.forall)
 
-    def _transform_action_integers(
-            self, problem: Problem, new_problem: Problem, old_action: Action
-    ) -> List[Action]:
+    def _transform_action_integers(self, problem: Problem, new_problem: Problem, old_action: Action) -> List[Action]:
         params = OrderedDict(((p.name, p.type) for p in old_action.parameters))
 
-        # Check if preconditions require CP-SAT
+        # Check if preconditions/effects require CP-SAT
         has_arithmetic_preconditions = any(requires_arithmetic(p) for p in old_action.preconditions)
-
-        # Check if effects require CP-SAT
         has_arithmetic_effects = any(
             effect.value.node_type in self.ARITHMETIC_OPS
-            or effect.is_increase()
-            or effect.is_decrease()
+            or effect.is_increase() or effect.is_decrease()
             or requires_arithmetic(effect.condition)
             for effect in old_action.effects
         )
 
-        # No arithmetic anywhere: direct transformation, no CP-SAT needed
+        # No arithmetic: direct transformation, no CP-SAT needed
         if not has_arithmetic_preconditions and not has_arithmetic_effects:
             new_action = InstantaneousAction(old_action.name, _parameters=params, _env=problem.environment)
-            for dp in old_action.preconditions:
-                transformed = self._transform_node(problem, new_problem, dp)
-                if transformed and transformed != TRUE():
-                    new_action.add_precondition(transformed)
-            for effect in old_action.effects:
-                new_fluent = self._transform_node(problem, new_problem, effect.fluent)
-                new_value = self._transform_node(problem, new_problem, effect.value)
-                new_cond = self._transform_node(problem, new_problem, effect.condition)
+
+            for old_precondition in old_action.preconditions:
+                new_precondition = self._transform_node(problem, new_problem, old_precondition)
+                if new_precondition and new_precondition != TRUE():
+                    new_action.add_precondition(new_precondition)
+
+            for old_effect in old_action.effects:
+                new_fluent = self._transform_node(problem, new_problem, old_effect.fluent)
+                new_value = self._transform_node(problem, new_problem, old_effect.value)
+                new_cond = self._transform_node(problem, new_problem, old_effect.condition)
                 if new_cond is None:
                     new_cond = TRUE()
                 if new_fluent and new_value:
-                    new_action.add_effect(new_fluent, new_value, new_cond, effect.forall)
+                    new_action.add_effect(new_fluent, new_value, new_cond, old_effect.forall)
             return [new_action]
 
-        # Arithmetic anywhere → CP-SAT to enumerate all valid assignments
+        # Arithmetic: CP-SAT to enumerate all valid assignments
         self._object_to_index = {}
         self._index_to_object = {}
 
@@ -504,12 +501,13 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         non_arithmetic_precs = []
 
         if has_arithmetic_preconditions:
+            # Add ALL preconditions as constraints
             result_var = add_cp_constraints(problem, And(old_action.preconditions), variables, cp_model_obj,
                                             self._object_to_index)
             cp_model_obj.Add(result_var == 1)
         else:
-            for dp in old_action.preconditions:
-                transformed = self._transform_node(problem, new_problem, dp)
+            for new_action in old_action.preconditions:
+                transformed = self._transform_node(problem, new_problem, new_action)
                 if transformed and transformed != TRUE():
                     non_arithmetic_precs.append(transformed)
 
@@ -526,9 +524,8 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         )
 
     def _transform_actions(self, problem: Problem, new_problem: Problem) -> Dict[Action, Action]:
-        """Transform all actions by grounding integer parameters."""
+        """Transform all actions by grounding integer parameters into objects."""
         new_to_old = {}
-        # 4. Per cada acció, afegir efectes de manteniment i clonar
         for old_action in problem.actions:
             temporal_action = old_action.clone()
             for goal_expr, goal_fluent_exp in self._goal_registry:
@@ -826,7 +823,5 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                 new_problem.add_quality_metric(metric)
 
         return CompilerResult(
-            new_problem,
-            partial(replace_action, map=new_to_old),
-            self.name
+            new_problem, partial(replace_action, map=new_to_old), self.name
         )
