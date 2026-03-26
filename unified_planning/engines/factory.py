@@ -112,9 +112,9 @@ DEFAULT_ENGINES = {
         "unified_planning.engines.compilers.arrays_remover",
         "ArraysRemover",
     ),
-    "up_arrays_logarithmic_remover": (
-        "unified_planning.engines.compilers.arrays_logarithmic_remover",
-        "ArraysLogarithmicRemover",
+    "up_logarithmic_remover": (
+        "unified_planning.engines.compilers.logarithmic_remover",
+        "LogarithmicRemover",
     ),
     "up_sets_remover": (
         "unified_planning.engines.compilers.sets_remover",
@@ -200,7 +200,7 @@ DEFAULT_ENGINES_PREFERENCE_LIST = [
     "up_count_remover",
     "up_count_int_remover",
     "up_arrays_remover",
-    "up_arrays_logarithmic_remover",
+    "up_logarithmic_remover",
     "up_sets_remover",
     "up_preconditions_to_table_simplifier",
     "up_int_parameter_actions_remover",

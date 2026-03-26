@@ -772,7 +772,10 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
         # ========== Transform Fluents ==========
         self._transform_fluents(problem, new_problem)
 
+        # ========== Transform Goals ==========
+        self._transform_goals(problem, new_problem)
 
+        # ========== Transform Actions ==========
         for action in problem.actions:
             # Add goal maintenance effects for arithmetic goals
             temporal_action = action.clone()
@@ -830,8 +833,6 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                 new_problem.add_action(new_action)
                 new_to_old[new_action] = action
 
-        # Transform goals properly (like ALR latest, not just direct transformation)
-        self._transform_goals(problem, new_problem)
 
         for qm in problem.quality_metrics:
             if qm.is_minimize_sequential_plan_length() or qm.is_minimize_makespan():
