@@ -3,7 +3,7 @@ import sys
 args = sys.argv[1:]
 file = args[0]
 
-with open(f'/Users/cds26/PycharmProjects/unified-planning/docs/extensions/domains/folding/instances/{file}.txt', 'r') as f:
+with open(f'/Users/cds26/PycharmProjects/unified-planning/docs/extensions/wip_domains/folding/instances/{file}.txt', 'r') as f:
     lines = f.readlines()
 
 rows = lines[0]

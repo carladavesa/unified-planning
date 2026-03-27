@@ -46,7 +46,7 @@ from unified_planning.engines.compilers.utils import (
     solve_with_cp_sat,
     get_fresh_name,
     replace_action,
-    updated_minimize_action_costs, requires_arithmetic,
+    updated_minimize_action_costs, requires_arithmetic, substitute_modified_fluents, evaluate_goal_in_initial_state,
 )
 from unified_planning.exceptions import UPProblemDefinitionError
 from typing import Dict, List, Optional, OrderedDict, Iterable, Tuple
@@ -237,7 +237,27 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                         result //= a.constant_value()
                 return new_problem.environment.expression_manager.Int(result)
 
-        return None
+        if expr.is_le():
+            args = [self._evaluate_with_solution(new_problem, arg, solution) for arg in expr.args]
+            if all(a and a.is_int_constant() for a in args):
+                return TRUE() if args[0].constant_value() <= args[1].constant_value() else FALSE()
+
+        if expr.is_lt():
+            args = [self._evaluate_with_solution(new_problem, arg, solution) for arg in expr.args]
+            if all(a and a.is_int_constant() for a in args):
+                return TRUE() if args[0].constant_value() < args[1].constant_value() else FALSE()
+
+        if expr.is_not():
+            v = self._evaluate_with_solution(new_problem, expr.arg(0), solution)
+            if v == TRUE(): return FALSE()
+            if v == FALSE(): return TRUE()
+
+        if expr.is_equals():
+            args = [self._evaluate_with_solution(new_problem, arg, solution) for arg in expr.args]
+            if all(a and a.is_int_constant() for a in args):
+                return TRUE() if args[0].constant_value() == args[1].constant_value() else FALSE()
+
+        return expr
 
     # ==================== ACTION TRANSFORMATION ====================
 
@@ -338,12 +358,11 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
 
                 if old_effect.condition is not None and not old_effect.condition.is_true():
                     if requires_arithmetic(old_effect.condition):
-                        expansions = self._expand_condition_with_cp(
-                            problem, new_problem, old_effect.condition, solution
-                        )
-                        for bool_val, cond in expansions:
-                            if bool_val == TRUE() and new_fluent and new_value:
-                                new_action.add_effect(new_fluent, new_value, cond, old_effect.forall)
+                        result = self._evaluate_with_solution(new_problem, old_effect.condition, solution)
+                        if result == TRUE() and new_fluent and new_value:
+                            new_action.add_effect(new_fluent, new_value, TRUE(), old_effect.forall)
+                        elif result == FALSE():
+                            continue
                     else:
                         new_cond = self._get_new_expression(new_problem, old_effect.condition) or TRUE()
                         if new_fluent and new_value:
@@ -453,9 +472,12 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
         if not goal_fluent_exps & action_modifies_exps:
             return
 
-        # Add conditional effects to keep goal fluent in sync
-        action.add_effect(goal_fluent_exp, TRUE(), goal_expr)
-        action.add_effect(goal_fluent_exp, FALSE(), Not(goal_expr).simplify())
+        # Replace modified fluents for its next expression
+        substituted_goal = substitute_modified_fluents(action, goal_expr)
+
+        # Add conditional effects with the goal expression as condition to maintain the goal fluent's value
+        action.add_effect(goal_fluent_exp, TRUE(), substituted_goal)
+        action.add_effect(goal_fluent_exp, FALSE(), Not(substituted_goal).simplify())
 
     def _transform_goals(self, problem: Problem, new_problem: Problem) -> None:
         """
@@ -477,7 +499,7 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
             if transformed and transformed != TRUE():
                 new_problem.add_goal(transformed)
 
-        # Arithmetic goals - create auxiliary fluents
+        # Create a predicate for each arithmetic goal
         self._goal_registry = []
         for i, goal in enumerate(arithmetic_goals):
             fluent_name = f"goal_{i}"
@@ -486,11 +508,11 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
             goal_fluent = Fluent(fluent_name, BoolType())
             new_problem.add_fluent(goal_fluent, default_initial_value=FALSE())
 
-            goal_fluent_exp = goal_fluent()
-            # Add as goal
-            new_problem.add_goal(goal_fluent_exp)
-            # Store for maintenance effects in actions
-            self._goal_registry.append((goal, goal_fluent_exp))
+            init_val = evaluate_goal_in_initial_state(problem, goal)
+            new_problem.set_initial_value(goal_fluent(), TRUE() if init_val else FALSE())
+
+            new_problem.add_goal(goal_fluent())
+            self._goal_registry.append((goal, goal_fluent()))
 
     # ==================== AXIOMS TRANSFORMATION ====================
 
@@ -515,64 +537,6 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                 continue
             new_problem.add_axiom(new_axiom)
             new_to_old[new_axiom] = axiom
-
-    def _expand_condition_with_cp(
-            self,
-            problem: Problem,
-            new_problem: Problem,
-            condition: FNode,
-            solution: dict,
-    ) -> List[tuple]:
-        variables = bidict({})
-        cp_model_obj = cp_model.CpModel()
-        result_var = add_cp_constraints(problem, condition, variables, cp_model_obj, self._object_to_index)
-
-        for fnode, var in list(variables.items()):
-            var_str = str(fnode)
-            if var_str in solution:
-                cp_model_obj.Add(var == solution[var_str])
-
-        cp_model_obj.Add(result_var == 1)
-        true_solutions = solve_with_cp_sat(variables, cp_model_obj) or []
-
-        cp_model_obj2 = cp_model.CpModel()
-        variables2 = bidict({})
-        result_var2 = add_cp_constraints(problem, condition, variables2, cp_model_obj2, self._object_to_index)
-        for fnode, var in list(variables2.items()):
-            var_str = str(fnode)
-            if var_str in solution:
-                cp_model_obj2.Add(var == solution[var_str])
-        cp_model_obj2.Add(result_var2 == 0)
-        false_solutions = solve_with_cp_sat(variables2, cp_model_obj2) or []
-
-        unknown_vars = {str(fnode): fnode for fnode, var in variables.items()
-                        if str(fnode) not in solution}
-
-        results = []
-        for bool_val, sols in [(TRUE(), true_solutions), (FALSE(), false_solutions)]:
-            if not sols:
-                continue
-            clauses = []
-            for sol in sols:
-                sol_conds = []
-                for var_str, fnode in unknown_vars.items():
-                    if var_str not in sol or not fnode.is_fluent_exp():
-                        continue
-                    fluent = fnode.fluent()
-                    if fluent.type.is_int_type() and fluent.name in self.n_bits:
-                        n_bits = self.n_bits[fluent.name]
-                        value_bits = self._convert_value(sol[var_str], n_bits)
-                        bit_fluents = self._get_bit_fluents(new_problem, fnode)
-                        bit_conds = [f if b else Not(f) for f, b in zip(bit_fluents, value_bits)]
-                        sol_conds.append(And(bit_conds) if len(bit_conds) > 1 else bit_conds[0])
-                if sol_conds:
-                    clauses.append(And(sol_conds) if len(sol_conds) > 1 else sol_conds[0])
-
-            if clauses:
-                full_cond = Or(clauses).simplify() if len(clauses) > 1 else clauses[0]
-                results.append((bool_val, full_cond))
-
-        return results
 
     def _create_multiple_actions(
             self,

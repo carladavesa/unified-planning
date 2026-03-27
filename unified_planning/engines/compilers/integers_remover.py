@@ -19,7 +19,8 @@ import unified_planning.engines as engines
 from bidict import bidict
 from ortools.sat.python import cp_model
 from unified_planning.engines.compilers.utils import (
-    add_cp_constraints, add_effect_bounds_constraints, compute_integer_range, solve_with_cp_sat, requires_arithmetic
+    add_cp_constraints, add_effect_bounds_constraints, compute_integer_range, solve_with_cp_sat, requires_arithmetic,
+    substitute_modified_fluents, evaluate_goal_in_initial_state
 )
 from typing import Any
 from unified_planning.model.expression import ListExpression
@@ -320,76 +321,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
         return new_actions
 
-    def _expand_condition_with_cp(
-            self,
-            problem: Problem,
-            new_problem: Problem,
-            condition: FNode,
-            solution: dict,
-    ) -> List[tuple]:  # [(bool_value, FNode_condition)]
-        """
-        Expan una condició aritmètica parcialment fixada per la solució.
-        Retorna llista de (valor_bool, condició_en_Number_objects).
-        """
-        from bidict import bidict
-
-        # Construir model CP-SAT amb els valors de la solució fixats
-        variables = bidict({})
-        cp_model_obj = cp_model.CpModel()
-
-        # Afegir la condició com a constraint
-        result_var = add_cp_constraints(problem, condition, variables, cp_model_obj, self._object_to_index)
-
-        # Fixar les variables que ja coneixem de la solució
-        for fnode, var in list(variables.items()):
-            var_str = str(fnode)
-            if var_str in solution:
-                cp_model_obj.Add(var == solution[var_str])
-
-        # Solucions on la condició és TRUE
-        cp_model_obj.Add(result_var == 1)
-        true_solutions = solve_with_cp_sat(variables, cp_model_obj) or []
-
-        # Solucions on la condició és FALSE
-        cp_model_obj2 = cp_model.CpModel()
-        variables2 = bidict({})
-        result_var2 = add_cp_constraints(problem, condition, variables2, cp_model_obj2, self._object_to_index)
-        for fnode, var in list(variables2.items()):
-            var_str = str(fnode)
-            if var_str in solution:
-                cp_model_obj2.Add(var == solution[var_str])
-        cp_model_obj2.Add(result_var2 == 0)
-        false_solutions = solve_with_cp_sat(variables2, cp_model_obj2) or []
-
-        # Filtrar només les variables desconegudes (no a la solució)
-        unknown_vars = {str(fnode): fnode for fnode, var in variables.items()
-                        if str(fnode) not in solution}
-
-        results = []
-
-        for bool_val, sols in [(TRUE(), true_solutions), (FALSE(), false_solutions)]:
-            if not sols:
-                continue
-            clauses = []
-            for sol in sols:
-                sol_conds = []
-                for var_str, fnode in unknown_vars.items():
-                    if var_str not in sol:
-                        continue
-                    cond = self._create_precondition_from_variable(
-                        fnode, sol[var_str], new_problem
-                    )
-                    if cond:
-                        sol_conds.append(cond)
-                if sol_conds:
-                    clauses.append(And(sol_conds).simplify() if len(sol_conds) > 1 else sol_conds[0])
-
-            if clauses:
-                full_cond = Or(clauses).simplify() if len(clauses) > 1 else clauses[0]
-                results.append((bool_val, full_cond))
-
-        return results
-
     def _add_effects_for_solution(
             self,
             new_action: InstantaneousAction,
@@ -437,6 +368,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                     new_cond = self._evaluate_with_solution(new_problem, effect.condition, solution)
                 else:
                     new_cond = self._transform_node(problem, new_problem, effect.condition) or TRUE()
+
                 new_value = self._evaluate_with_solution(new_problem, effect.value, solution)
                 if new_value and new_cond != FALSE():
                     new_action.add_effect(new_fluent, new_value, new_cond)
@@ -447,12 +379,11 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
                 if effect.condition is not None and not effect.condition.is_true():
                     if requires_arithmetic(effect.condition):
-                        expansions = self._expand_condition_with_cp(
-                            problem, new_problem, effect.condition, solution
-                        )
-                        for bool_val, cond in expansions:
-                            if bool_val == TRUE() and new_fluent and new_value:
-                                new_action.add_effect(new_fluent, new_value, cond, effect.forall)
+                        result = self._evaluate_with_solution(new_problem, effect.condition, solution)
+                        if result == TRUE() and new_fluent and new_value:
+                            new_action.add_effect(new_fluent, new_value, TRUE(), effect.forall)
+                        elif result == FALSE():
+                            continue
                     else:
                         new_cond = self._transform_node(problem, new_problem, effect.condition) or TRUE()
                         if new_fluent and new_value:
@@ -463,7 +394,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
     def _transform_action_integers(self, problem: Problem, new_problem: Problem, old_action: Action) -> List[Action]:
         params = OrderedDict(((p.name, p.type) for p in old_action.parameters))
-
         # Check if preconditions/effects require CP-SAT
         has_arithmetic_preconditions = any(requires_arithmetic(p) for p in old_action.preconditions)
         has_arithmetic_effects = any(
@@ -564,40 +494,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
     # ==================== GOALS TRANSFORMATION ====================
 
-    def _evaluate_goal_in_initial_state(self, problem: Problem, goal: FNode) -> bool:
-        """Evaluates the goal initial value."""
-
-        def eval_node(node):
-            if node.is_int_constant():
-                return node.constant_value()
-            if node.is_fluent_exp():
-                val = problem.initial_values.get(node)
-                if val is None:
-                    for f, v in problem.initial_values.items():
-                        if str(f) == str(node):
-                            return v.constant_value() if v.is_constant() else None
-                return val.constant_value() if val is not None and val.is_constant() else None
-            if node.is_lt():
-                l, r = eval_node(node.arg(0)), eval_node(node.arg(1))
-                return (l < r) if l is not None and r is not None else None
-            if node.is_le():
-                l, r = eval_node(node.arg(0)), eval_node(node.arg(1))
-                return (l <= r) if l is not None and r is not None else None
-            if node.is_plus():
-                vals = [eval_node(a) for a in node.args]
-                return sum(vals) if all(v is not None for v in vals) else None
-            if node.is_minus():
-                vals = [eval_node(a) for a in node.args]
-                if all(v is not None for v in vals):
-                    return vals[0] - sum(vals[1:])
-            if node.is_equals():
-                l, r = eval_node(node.arg(0)), eval_node(node.arg(1))
-                return (l == r) if l is not None and r is not None else None
-            return None
-
-        result = eval_node(goal)
-        return bool(result) if result is not None else False
-
     def _get_fluent_exps_in_expression(self, node: FNode) -> set:
         result = set()
         if node.is_fluent_exp():
@@ -621,7 +517,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             for effect in action.effects
             if effect.fluent.is_fluent_exp()
         }
-        # Comparar per nom complet (str) per evitar problemes d'identitat d'objectes
+
         goal_fluent_strs = {str(f) for f in goal_fluent_exps}
         action_modifies_strs = {str(f) for f in action_modifies_exps}
 
@@ -631,14 +527,18 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         if not goal_fluent_exps & action_modifies_exps:
             return
 
-        # Afegir efectes condicionals directament amb l'expressió del goal
-        action.add_effect(goal_fluent_exp, TRUE(), goal_expr)
-        action.add_effect(goal_fluent_exp, FALSE(), Not(goal_expr).simplify())
+        # Replace modified fluents for its next expression
+        substituted_goal = substitute_modified_fluents(action, goal_expr)
+
+        # Add conditional effects with the goal expression as condition to maintain the goal fluent's value
+        action.add_effect(goal_fluent_exp, TRUE(), substituted_goal)
+        action.add_effect(goal_fluent_exp, FALSE(), Not(substituted_goal).simplify())
 
 
     def _transform_goals(self, problem: Problem, new_problem: Problem) -> None:
         arithmetic_goals = []
         direct_goals = []
+
         for goal in problem.goals:
             if requires_arithmetic(goal):
                 arithmetic_goals.append(goal)
@@ -660,7 +560,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             goal_fluent = Fluent(fluent_name, BoolType())
             new_problem.add_fluent(goal_fluent, default_initial_value=FALSE())
 
-            init_val = self._evaluate_goal_in_initial_state(problem, goal)
+            init_val = evaluate_goal_in_initial_state(problem, goal)
             new_problem.set_initial_value(goal_fluent(), TRUE() if init_val else FALSE())
 
             new_problem.add_goal(goal_fluent())
@@ -675,6 +575,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         if hasattr(self, '_index_to_object'):
             return self._index_to_object.get((user_type, index))
         return None
+
 
     def _evaluate_with_solution(
             self,
@@ -722,6 +623,15 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                     if len(values) == 1:
                         return -values[0]
                     return values[0] - sum(values[1:])
+            if node.is_le():
+                l, r = evaluate_recursive(node.arg(0)), evaluate_recursive(node.arg(1))
+                return (l <= r) if l is not None and r is not None else None
+            if node.is_lt():
+                l, r = evaluate_recursive(node.arg(0)), evaluate_recursive(node.arg(1))
+                return (l < r) if l is not None and r is not None else None
+            if node.is_not():
+                v = evaluate_recursive(node.arg(0))
+                return (not v) if v is not None else None
             return None
 
         result = evaluate_recursive(expr)

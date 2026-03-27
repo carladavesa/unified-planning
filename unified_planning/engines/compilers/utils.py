@@ -40,7 +40,7 @@ from unified_planning.model import (
     MaximizeExpressionOnFinalState,
     Oversubscription,
     TemporalOversubscription,
-    AbstractProblem,
+    AbstractProblem, OperatorKind,
 )
 from unified_planning.plans import ActionInstance
 from typing import (
@@ -843,6 +843,8 @@ def add_effect_bounds_constraints(
                 model.Add(result_expr <= ub)
 
         else:
+            if effect.value.node_type not in {OperatorKind.PLUS, OperatorKind.MINUS, OperatorKind.DIV, OperatorKind.TIMES}:
+                continue
             expr = add_cp_constraints(problem, effect.value, variables, model, object_to_index)
             if effect.condition is not None and not effect.condition.is_true():
                 if effect.condition.is_false():
@@ -853,3 +855,93 @@ def add_effect_bounds_constraints(
             else:
                 model.Add(expr >= lb)
                 model.Add(expr <= ub)
+
+    for effect in effects:
+        if requires_arithmetic(effect.condition):
+            register_fluent_variables(
+                problem, effect.condition, variables, model, object_to_index
+            )
+
+def register_fluent_variables(
+    problem: Problem, node: FNode, variables: bidict, model: cp_model.CpModel, object_to_index: dict,
+) -> None:
+    """Register fluent variables from an expression without adding any constraints."""
+    if node.is_fluent_exp():
+        if node not in variables:
+            fluent = node.fluent()
+            if fluent.type.is_int_type():
+                var = model.NewIntVar(
+                    fluent.type.lower_bound, fluent.type.upper_bound, str(node)
+                )
+                variables[node] = var
+        return
+    for arg in node.args:
+        register_fluent_variables(problem, arg, variables, model, object_to_index)
+
+def substitute_modified_fluents(action: Action, expr: FNode) -> FNode:
+    """
+    Substitute fluents modified by the action with their 'after' expression.
+
+    For increase(f, d): f → f + d
+    For decrease(f, d): f → f - d
+    For assign(f, v):   f → v
+    """
+    em = expr.environment.expression_manager
+
+    # Build map: fluent → after expression
+    after_map = {}
+    for effect in action.effects:
+        if not effect.fluent.is_fluent_exp():
+            continue
+        if effect.is_increase():
+            after_map[effect.fluent] = em.Plus(effect.fluent, effect.value)
+        elif effect.is_decrease():
+            after_map[effect.fluent] = em.Minus(effect.fluent, effect.value)
+        else:
+            after_map[effect.fluent] = effect.value
+
+    def substitute(node: FNode) -> FNode:
+        if node.is_fluent_exp() and node in after_map:
+            return after_map[node]
+        if not node.args:
+            return node
+        new_args = [substitute(arg) for arg in node.args]
+        if all(n is o for n, o in zip(new_args, node.args)):
+            return node
+        return em.create_node(node.node_type, tuple(new_args))
+
+    return substitute(expr)
+
+def evaluate_goal_in_initial_state(problem: Problem, goal: FNode) -> bool:
+    """Evaluates the goal initial value."""
+
+    def eval_node(node):
+        if node.is_int_constant():
+            return node.constant_value()
+        if node.is_fluent_exp():
+            val = problem.initial_values.get(node)
+            if val is None:
+                for f, v in problem.initial_values.items():
+                    if str(f) == str(node):
+                        return v.constant_value() if v.is_constant() else None
+            return val.constant_value() if val is not None and val.is_constant() else None
+        if node.is_lt():
+            l, r = eval_node(node.arg(0)), eval_node(node.arg(1))
+            return (l < r) if l is not None and r is not None else None
+        if node.is_le():
+            l, r = eval_node(node.arg(0)), eval_node(node.arg(1))
+            return (l <= r) if l is not None and r is not None else None
+        if node.is_plus():
+            vals = [eval_node(a) for a in node.args]
+            return sum(vals) if all(v is not None for v in vals) else None
+        if node.is_minus():
+            vals = [eval_node(a) for a in node.args]
+            if all(v is not None for v in vals):
+                return vals[0] - sum(vals[1:])
+        if node.is_equals():
+            l, r = eval_node(node.arg(0)), eval_node(node.arg(1))
+            return (l == r) if l is not None and r is not None else None
+        return None
+
+    result = eval_node(goal)
+    return bool(result) if result is not None else False

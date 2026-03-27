@@ -1,7 +1,7 @@
 import argparse
 import subprocess
 
-from docs.extensions.domains import compilation_solving
+from docs.extensions.wip_domains import compilation_solving
 from unified_planning.shortcuts import *
 
 # Run: python -m experiments.folding.Folding --compilation ut-integers --solving fast-downward
@@ -15,7 +15,7 @@ compilation = args.compilation
 solving = args.solving
 
 # Read instance
-instance_path = f'/Users/cds26/PycharmProjects/unified-planning/docs/extensions/domains/folding/read_instance.py'
+instance_path = f'/Users/cds26/PycharmProjects/unified-planning/docs/extensions/wip_domains/folding/read_instance.py'
 instance = subprocess.run(['python3', instance_path, 'o01'], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 output = instance.stdout.split("---")
 r = eval(eval(output[0].strip())[0].strip())
