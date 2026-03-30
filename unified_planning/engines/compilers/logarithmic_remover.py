@@ -15,9 +15,6 @@
 """This module defines the integers logarithmic remover class."""
 import math
 import re
-import re
-from itertools import product
-
 from bidict import bidict
 from unified_planning.model.operators import OperatorKind
 from ortools.sat.python import cp_model
@@ -638,8 +635,7 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                     non_arithmetic_precs.append(transformed)
 
         # Add effect bounds as constraints
-        add_effect_bounds_constraints(problem, variables, cp_model_obj, old_action.effects, self._object_to_index)
-
+        add_effect_bounds_constraints(problem, variables, cp_model_obj, old_action.effects, self._object_to_index, True)
         # Solve to get all valid variable assignments
         solutions = solve_with_cp_sat(variables, cp_model_obj)
         if not solutions:

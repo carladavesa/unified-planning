@@ -579,9 +579,10 @@ class CPSolutionCollector(cp_model.CpSolverSolutionCallback):
         return self.__solutions
 
 def requires_arithmetic(node: FNode) -> bool:
-    from unified_planning.model.operators import OperatorKind
     ARITHMETIC_OPS = {OperatorKind.PLUS, OperatorKind.MINUS, OperatorKind.TIMES, OperatorKind.DIV}
-    if node.node_type in ARITHMETIC_OPS or node.is_lt() or node.is_le():
+    if (node.node_type in ARITHMETIC_OPS
+            or node.is_lt() or node.is_le()
+            or (node.is_equals() and node.arg(0).type.is_int_type())):
         return True
     return any(requires_arithmetic(arg) for arg in node.args)
 
@@ -813,10 +814,14 @@ def add_effect_bounds_constraints(
         model: cp_model.CpModel,
         effects: List[Effect],
         object_to_index: dict,
+        register_condition_vars: bool = False,
 ):
     for effect in effects:
-        if not effect.fluent.is_fluent_exp():
-            continue
+        if register_condition_vars:
+            if effect.condition is not None and not effect.condition.is_true():
+                if requires_arithmetic(effect.condition):
+                    add_cp_constraints(problem, effect.condition, variables, model, object_to_index)
+
         fluent = effect.fluent.fluent()
         if not fluent.type.is_int_type():
             continue
@@ -855,12 +860,6 @@ def add_effect_bounds_constraints(
             else:
                 model.Add(expr >= lb)
                 model.Add(expr <= ub)
-
-    for effect in effects:
-        if requires_arithmetic(effect.condition):
-            register_fluent_variables(
-                problem, effect.condition, variables, model, object_to_index
-            )
 
 def register_fluent_variables(
     problem: Problem, node: FNode, variables: bidict, model: cp_model.CpModel, object_to_index: dict,
