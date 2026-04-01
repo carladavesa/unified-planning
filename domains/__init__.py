@@ -22,25 +22,27 @@ from .base import Domain
 #
 # The runner (run.py) uses this mapping to locate and execute domains.
 
-from .pancake_sorting import DOMAIN as pancake_sorting
-from .puzznic import DOMAIN as puzznic
-from .n_puzzle import DOMAIN as n_puzzle
+from .block_grouping import DOMAIN as block_grouping
 from .counters import DOMAIN as counters
-from .plotting import DOMAIN as plotting
-from .labyrinth import DOMAIN as labyrinth
 from .delivery import DOMAIN as delivery
+from .labyrinth import DOMAIN as labyrinth
+from .n_puzzle import DOMAIN as n_puzzle
+from .pancake_sorting import DOMAIN as pancake_sorting
+from .plotting import DOMAIN as plotting
+from .puzznic import DOMAIN as puzznic
 from .rush_hour import DOMAIN as rush_hour
 from .sokoban import DOMAIN as sokoban
 from .watering import DOMAIN as watering
 
 DOMAINS: dict[str, Domain] = {
-    "delivery": delivery,
-    "pancake_sorting": pancake_sorting,
-    "puzznic": puzznic,
-    "n_puzzle": n_puzzle,
+    "block_grouping": block_grouping,
     "counters": counters,
-    "plotting": plotting,
+    "delivery": delivery,
     "labyrinth": labyrinth,
+    "n_puzzle": n_puzzle,
+    "pancake_sorting": pancake_sorting,
+    "plotting": plotting,
+    "puzznic": puzznic,
     "rush_hour": rush_hour,
     "sokoban": sokoban,
     "watering": watering,
