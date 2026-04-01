@@ -521,9 +521,7 @@ return new_fluent(*(index_params + original_fluent_args))
 ```
 
 **`_add_array_as_indexed_fluent`** — creates `Fluent("name[k]", elem_type, …)` for
-every valid index position.  Sets `default_initial_value=Int(0)` for numeric
-element types to prevent `UNDEFINED_INITIAL_NUMERIC` errors when the `Index`
-type has more objects than a non-square array has valid positions.
+every valid index position.
 
 **`_transform_array_comparison`** — expands `(= arr1 arr2)` into a conjunction
 `And(= arr1[k] arr2[k] for k in all_positions)`.
@@ -568,38 +566,15 @@ Encodes every set fluent `s(?params) : set{T}` as a boolean-indexed fluent
 |---------------------|---------------|
 | `member(o, s(p))` | `s_bool(o, p)` |
 | `not member(o, s(p))` | `not s_bool(o, p)` |
-| `subset(s1, s2)` | `And(¬s1_bool(o) ∨ s2_bool(o)  for o)` |
+| `subset(s1, s2)` | `And(¬s1_bool(o) ∨ s2_bool(o)  for o)` (constant⊆fluent only) |
 | `disjoint(s1, s2)` | `And(¬(s1_bool(o) ∧ s2_bool(o)) for o)` |
 | `cardinality(s)` | integer helper fluent (maintained by conditional effects) |
-| `assign s := union(s1,s2)` | for each `o`: `if s1(o)∨s2(o) then s(o):=T else s(o):=F` |
-| `assign s := intersect(s1,s2)` | for each `o`: `if s1(o)∧s2(o) then s(o):=T else s(o):=F` |
-| `assign s := difference(s1,s2)` | for each `o`: `if s1(o)∧¬s2(o) then s(o):=T else s(o):=F` |
+| `assign s := union(s1,s2)` | for each `o` in s1∨s2: `s(o):=T` |
+| `assign s := intersect(s1,s2)` | for each `o` in s1∧s2: `s(o):=T` |
+| `assign s := difference(s1,s2)` | for each `o` in s1∧¬s2: `s(o):=T` |
 | `assign s := {o1,o2,…}` | `s(o1):=T, s(o2):=T, s(others):=F` |
 | `add elem s` effect | `s_bool(elem, …) := True` |
 | `remove elem s` effect | `s_bool(elem, …) := False` |
-
-### Bugs fixed during development
-
-**`_transform_subseteq`** — original code called `.constant_value()` on a fluent
-node (triggering `AssertionError`).  Fixed by separating three cases:
-fluent⊆fluent, constant⊆fluent, fluent⊆constant.  Also added `new_problem`
-parameter so objects of the element type can be enumerated.
-
-**`_transform_union/intersect/difference_effect`** — original handlers only emitted
-`true` conditional effects; the `false` branch was missing.  Without it, elements
-could never be cleared from the encoded boolean fluent, making assign-semantics
-wrong.  Each handler now emits **both** a true effect (when the element should be
-in the result) and a false effect (otherwise) for every object:
-
-```python
-for elem in elements:
-    new_effects.append(Effect(fluent_expr, TRUE(), true_cond,  …))
-    new_effects.append(Effect(fluent_expr, FALSE(), Not(true_cond).simplify(), …))
-```
-
-**`_transform_difference_effect`** — had an extra `new_action` parameter and
-called `new_action.add_effect(…)` instead of returning a list.  Signature
-corrected to `(self, new_problem, effect) -> List[Effect]`.
 
 ---
 

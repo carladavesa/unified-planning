@@ -65,10 +65,10 @@ instance = 'problem'
 solving = 'fast-downward'
 
 reader = PDDLReader()
-domain_filename = f'docs/extensions/domains/{domain}/domain_sets.pddl'
-problem_filename = f'docs/extensions/domains/{domain}/problem_sets.pddl'
+domain_filename = f'docs/extensions/domains/{domain}/15-puzzle_Domain.pddl'
+problem_filename = f'docs/extensions/domains/{domain}/15-puzzle_Problem.pddl'
 
 problem = reader.parse_problem(domain_filename, problem_filename)
 
 #['up', 'int', 'uti', 'log', 'c', 'ci', 'cin', 'sc', 'sci', 'scin', 'None']
-compilation_solving.compile_and_solve(problem, solving, compilation='sc')
+compilation_solving.compile_and_solve(problem, solving, compilation='uti')
