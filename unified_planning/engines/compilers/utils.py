@@ -581,8 +581,8 @@ class CPSolutionCollector(cp_model.CpSolverSolutionCallback):
 def requires_arithmetic(node: FNode) -> bool:
     ARITHMETIC_OPS = {OperatorKind.PLUS, OperatorKind.MINUS, OperatorKind.TIMES, OperatorKind.DIV}
     if (node.node_type in ARITHMETIC_OPS
-            or node.is_lt() or node.is_le()
-            or (node.is_equals() and node.arg(0).type.is_int_type())):
+            or node.is_lt() or node.is_le()):
+            #or (node.is_equals() and node.arg(0).type.is_int_type())):
         return True
     return any(requires_arithmetic(arg) for arg in node.args)
 
@@ -818,9 +818,15 @@ def add_effect_bounds_constraints(
 ):
     for effect in effects:
         if register_condition_vars:
+            # Fluents written by the action - don't want them as free variables
+            written_fluents = {str(effect.fluent) for effect in effects}
+
             if effect.condition is not None and not effect.condition.is_true():
                 if requires_arithmetic(effect.condition):
-                    add_cp_constraints(problem, effect.condition, variables, model, object_to_index)
+                    # Only adding variables that aren't written by the action
+                    for fnode in get_fluent_exps_in_expression(effect.condition):
+                        if str(fnode) not in written_fluents:
+                            add_cp_constraints(problem, fnode, variables, model, object_to_index)
 
         fluent = effect.fluent.fluent()
         if not fluent.type.is_int_type():
@@ -831,7 +837,6 @@ def add_effect_bounds_constraints(
         fluent_var = add_cp_constraints(problem, effect.fluent, variables, model, object_to_index)
 
         if effect.is_increase() or effect.is_decrease():
-
             try:
                 delta = effect.value.constant_value()
                 result_expr = fluent_var + delta if effect.is_increase() else fluent_var - delta
@@ -876,6 +881,96 @@ def register_fluent_variables(
         return
     for arg in node.args:
         register_fluent_variables(problem, arg, variables, model, object_to_index)
+
+def evaluate_with_solution(
+        problem,
+        expr: FNode,
+        solution: dict,
+) -> Optional[FNode]:
+    """Evaluate expression with a specific variable assignment.
+    Returns TRUE/FALSE if fully evaluated, partially evaluated expression otherwise."""
+    em = problem.environment.expression_manager
+
+    if expr.is_constant():
+        return expr
+
+    if expr.is_fluent_exp():
+        var_name = str(expr)
+        if var_name in solution:
+            return em.Int(solution[var_name])
+        return expr  # retorna l'expressió original si no és a la solució
+
+    if expr.is_plus():
+        args = [evaluate_with_solution(problem, arg, solution) for arg in expr.args]
+        if all(a.is_int_constant() for a in args):
+            return em.Int(sum(a.constant_value() for a in args))
+        return em.Plus(args)
+
+    if expr.is_minus():
+        args = [evaluate_with_solution(problem, arg, solution) for arg in expr.args]
+        if all(a.is_int_constant() for a in args):
+            result = args[0].constant_value() - sum(a.constant_value() for a in args[1:]) if len(args) > 1 else -args[0].constant_value()
+            return em.Int(result)
+        return em.Minus(args[0], args[1]) if len(args) == 2 else em.Minus(args[0], em.Plus(args[1:]))
+
+    if expr.is_times():
+        args = [evaluate_with_solution(problem, arg, solution) for arg in expr.args]
+        if all(a.is_int_constant() for a in args):
+            result = 1
+            for a in args:
+                result *= a.constant_value()
+            return em.Int(result)
+        return em.Times(args)
+
+    if expr.is_div():
+        args = [evaluate_with_solution(problem, arg, solution) for arg in expr.args]
+        if all(a.is_int_constant() for a in args) and args[1].constant_value() != 0:
+            return em.Int(args[0].constant_value() // args[1].constant_value())
+        return em.Div(args[0], args[1])
+
+    if expr.is_le():
+        args = [evaluate_with_solution(problem, arg, solution) for arg in expr.args]
+        if all(a.is_int_constant() for a in args):
+            return em.TRUE() if args[0].constant_value() <= args[1].constant_value() else em.FALSE()
+        return em.LE(args[0], args[1])
+
+    if expr.is_lt():
+        args = [evaluate_with_solution(problem, arg, solution) for arg in expr.args]
+        if all(a.is_int_constant() for a in args):
+            return em.TRUE() if args[0].constant_value() < args[1].constant_value() else em.FALSE()
+        return em.LT(args[0], args[1])
+
+    if expr.is_equals():
+        args = [evaluate_with_solution(problem, arg, solution) for arg in expr.args]
+        if all(a.is_int_constant() for a in args):
+            return em.TRUE() if args[0].constant_value() == args[1].constant_value() else em.FALSE()
+        return em.Equals(args[0], args[1])
+
+    if expr.is_not():
+        v = evaluate_with_solution(problem, expr.arg(0), solution)
+        if v == em.TRUE(): return em.FALSE()
+        if v == em.FALSE(): return em.TRUE()
+        return em.Not(v)
+
+    if expr.is_and():
+        args = [evaluate_with_solution(problem, arg, solution) for arg in expr.args]
+        if any(a == em.FALSE() for a in args):
+            return em.FALSE()
+        remaining = [a for a in args if a != em.TRUE()]
+        if not remaining:
+            return em.TRUE()
+        return em.And(remaining) if len(remaining) > 1 else remaining[0]
+
+    if expr.is_or():
+        args = [evaluate_with_solution(problem, arg, solution) for arg in expr.args]
+        if any(a == em.TRUE() for a in args):
+            return em.TRUE()
+        remaining = [a for a in args if a != em.FALSE()]
+        if not remaining:
+            return em.FALSE()
+        return em.Or(remaining) if len(remaining) > 1 else remaining[0]
+
+    return expr
 
 def substitute_modified_fluents(action: Action, expr: FNode) -> FNode:
     """
@@ -944,3 +1039,12 @@ def evaluate_goal_in_initial_state(problem: Problem, goal: FNode) -> bool:
 
     result = eval_node(goal)
     return bool(result) if result is not None else False
+
+def get_fluent_exps_in_expression(node: FNode) -> set:
+    """Get all fluent expressions that appear in an expression."""
+    result = set()
+    if node.is_fluent_exp():
+        result.add(node)
+    for arg in node.args:
+        result.update(get_fluent_exps_in_expression(arg))
+    return result

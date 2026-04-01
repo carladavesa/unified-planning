@@ -20,7 +20,7 @@ from bidict import bidict
 from ortools.sat.python import cp_model
 from unified_planning.engines.compilers.utils import (
     add_cp_constraints, add_effect_bounds_constraints, compute_integer_range, solve_with_cp_sat, requires_arithmetic,
-    substitute_modified_fluents, evaluate_goal_in_initial_state
+    substitute_modified_fluents, evaluate_goal_in_initial_state, get_fluent_exps_in_expression, evaluate_with_solution
 )
 from typing import Any
 from unified_planning.model.expression import ListExpression
@@ -36,7 +36,7 @@ from unified_planning.engines.compilers.utils import get_fresh_name, replace_act
 from typing import Optional, Iterator, OrderedDict, Union
 from functools import partial
 from unified_planning.shortcuts import And, Or, Equals, Not, FALSE, UserType, TRUE, ObjectExp
-from typing import List, Dict
+from typing import Dict
 
 class IntegersRemover(engines.engine.Engine, CompilerMixin):
     """
@@ -282,189 +282,141 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
         return None
 
-    def _create_multiple_actions(
-            self,
-            old_action: Action,
-            problem: Problem,
-            new_problem: Problem,
-            params: OrderedDict,
-            solutions: List[dict],
-            variables: bidict,
-            extra_preconditions: List[FNode] = [],
-    ) -> List[Action]:
+    def _create_multiple_actions(self, old_action, problem, new_problem, params, solutions, variables):
         new_actions = []
+
+        prec_fluent_strs = set()
+        for prec in old_action.preconditions:
+            for f in get_fluent_exps_in_expression(prec):
+                prec_fluent_strs.add(str(f))
+
+        modified_fluent_strs = {
+            str(effect.fluent) for effect in old_action.effects
+            if str(effect.fluent) not in prec_fluent_strs
+               and not effect.is_increase() and not effect.is_decrease()
+               and effect.condition.is_true()
+        }
+
         for idx, solution in enumerate(solutions):
             action_name = f"{old_action.name}_d{idx}"
             new_action = InstantaneousAction(action_name, _parameters=params, _env=problem.environment)
 
-            # Non-arithmetic preconditions
-            for prec in extra_preconditions:
-                new_action.add_precondition(prec)
-
-            # Add preconditions from solution
             and_clauses = []
             for fnode, var in variables.items():
-                var_name = str(var)
-                if var_name not in solution:
+                var_str = str(fnode)
+                if var_str in modified_fluent_strs:
                     continue
-                cond = self._create_precondition_from_variable(
-                    fnode, solution[var_name], new_problem
-                )
+                if var_str not in solution:
+                    continue
+                cond = self._create_precondition_from_variable(fnode, solution[var_str], new_problem)
                 if cond:
                     and_clauses.append(cond)
             if and_clauses:
                 new_action.add_precondition(And(and_clauses) if len(and_clauses) > 1 else and_clauses[0])
 
-            # Effects
             self._add_effects_for_solution(new_action, problem, new_problem, solution, old_action.effects)
             new_actions.append(new_action)
 
         return new_actions
 
-    def _expand_condition_with_cp(
-            self,
-            problem: Problem,
-            new_problem: Problem,
-            condition: FNode,
-            solution: dict,
-    ) -> List[tuple]:
-        """
-        Partially expands an arithmetic condition fixed by a solution.
-        """
-        from bidict import bidict
-
-        # Construir model CP-SAT amb els valors de la solució fixats
+    def _expand_condition_with_cp(self, problem, new_problem, condition, solution):
         variables = bidict({})
         cp_model_obj = cp_model.CpModel()
-
-        # Afegir la condició com a constraint
         result_var = add_cp_constraints(problem, condition, variables, cp_model_obj, self._object_to_index)
 
-        # Fixar les variables que ja coneixem de la solució
         for fnode, var in list(variables.items()):
-            var_str = str(fnode)
-            if var_str in solution:
-                cp_model_obj.Add(var == solution[var_str])
+            if str(fnode) in solution:
+                cp_model_obj.Add(var == solution[str(fnode)])
 
-        # Solucions on la condició és TRUE
         cp_model_obj.Add(result_var == 1)
         true_solutions = solve_with_cp_sat(variables, cp_model_obj) or []
 
-        # Solucions on la condició és FALSE
-        cp_model_obj2 = cp_model.CpModel()
-        variables2 = bidict({})
-        result_var2 = add_cp_constraints(problem, condition, variables2, cp_model_obj2, self._object_to_index)
-        for fnode, var in list(variables2.items()):
-            var_str = str(fnode)
-            if var_str in solution:
-                cp_model_obj2.Add(var == solution[var_str])
-        cp_model_obj2.Add(result_var2 == 0)
-        false_solutions = solve_with_cp_sat(variables2, cp_model_obj2) or []
-
-        # Filtrar només les variables desconegudes (no a la solució)
         unknown_vars = {str(fnode): fnode for fnode, var in variables.items()
                         if str(fnode) not in solution}
 
-        results = []
-
-        for bool_val, sols in [(TRUE(), true_solutions), (FALSE(), false_solutions)]:
-            if not sols:
-                continue
-            clauses = []
-            for sol in sols:
-                sol_conds = []
-                for var_str, fnode in unknown_vars.items():
-                    if var_str not in sol:
-                        continue
-                    cond = self._create_precondition_from_variable(
-                        fnode, sol[var_str], new_problem
-                    )
-                    if cond:
-                        sol_conds.append(cond)
-                if sol_conds:
-                    clauses.append(And(sol_conds).simplify() if len(sol_conds) > 1 else sol_conds[0])
-
-            if clauses:
-                full_cond = Or(clauses).simplify() if len(clauses) > 1 else clauses[0]
-                results.append((bool_val, full_cond))
-
-        return results
-
-    def _add_effects_for_solution(
-            self,
-            new_action: InstantaneousAction,
-            problem: Problem,
-            new_problem: Problem,
-            solution: dict,
-            old_effects: List[Effect],
-    ) -> None:
-        for effect in old_effects:
-            if effect.is_increase() or effect.is_decrease():
-                fluent = effect.fluent.fluent()
-                new_fluent = new_problem.fluent(fluent.name)(*effect.fluent.args)
-                try:
-                    delta = effect.value.constant_value()
-                except:
-                    for new_eff in self._transform_increase_decrease_effect(effect, new_problem):
-                        new_action.add_effect(new_eff.fluent, new_eff.value, new_eff.condition, new_eff.forall)
+        clauses = []
+        for sol in true_solutions:
+            sol_conds = []
+            for var_str, fnode in unknown_vars.items():
+                if var_str not in sol:
                     continue
+                cond = self._create_precondition_from_variable(fnode, sol[var_str], new_problem)
+                if cond:
+                    sol_conds.append(cond)
+            if sol_conds:
+                clauses.append(And(sol_conds).simplify() if len(sol_conds) > 1 else sol_conds[0])
 
-                fluent_var_str = str(effect.fluent)
-                cur_val = solution.get(fluent_var_str)
-                if cur_val is None:
-                    for new_eff in self._transform_increase_decrease_effect(effect, new_problem):
-                        new_action.add_effect(new_eff.fluent, new_eff.value, new_eff.condition, new_eff.forall)
-                    continue
+        if not clauses:
+            return []
+        full_cond = Or(clauses).simplify() if len(clauses) > 1 else clauses[0]
+        return [(TRUE(), full_cond)]
 
-                next_val = (cur_val + delta) if effect.is_increase() else (cur_val - delta)
-                new_obj = self._get_number_object(new_problem, next_val)
-
-                if effect.condition is not None and not effect.condition.is_true():
-                    cond_result = self._evaluate_with_solution(new_problem, effect.condition, solution)
-                    if cond_result == FALSE():
-                        continue
-                    elif cond_result == TRUE():
-                        cond = TRUE()
-                    else:
-                        cond = self._transform_node(problem, new_problem, effect.condition)
-                else:
-                    cond = TRUE()
-                new_action.add_effect(new_fluent, new_obj, cond, effect.forall)
-
-            elif effect.value.node_type in self.ARITHMETIC_OPS:
-                new_fluent = self._transform_node(problem, new_problem, effect.fluent)
-                if requires_arithmetic(effect.condition):
-                    new_cond = self._evaluate_with_solution(new_problem, effect.condition, solution)
-                else:
-                    new_cond = self._transform_node(problem, new_problem, effect.condition) or TRUE()
-
-                new_value = self._evaluate_with_solution(new_problem, effect.value, solution)
-                if new_value and new_cond != FALSE():
-                    new_action.add_effect(new_fluent, new_value, new_cond)
-
+    def _add_effects_for_solution(self, new_action, problem, new_problem, solution, old_effects):
+        for old_effect in old_effects:
+            # Evaluate condition
+            if old_effect.condition.is_true():
+                new_condition = TRUE()
             else:
-                new_fluent = self._transform_node(problem, new_problem, effect.fluent)
-                new_value = self._transform_node(problem, new_problem, effect.value)
+                new_condition = evaluate_with_solution(new_problem, old_effect.condition, solution)
+                if new_condition == FALSE():
+                    continue
 
-                if effect.condition is not None and not effect.condition.is_true():
-                    if requires_arithmetic(effect.condition):
-                        expansions = self._expand_condition_with_cp(
-                            problem, new_problem, effect.condition, solution
-                        )
-                        for bool_val, cond in expansions:
-                            if bool_val == TRUE() and new_fluent and new_value:
-                                new_action.add_effect(new_fluent, new_value, cond, effect.forall)
-                    else:
-                        new_cond = self._transform_node(problem, new_problem, effect.condition) or TRUE()
-                        if new_fluent and new_value:
-                            new_action.add_effect(new_fluent, new_value, new_cond, effect.forall)
+            # Increase/decrease effect
+            if old_effect.is_increase() or old_effect.is_decrease():
+                fluent = old_effect.fluent.fluent()
+                new_fluent = new_problem.fluent(fluent.name)(*old_effect.fluent.args)
+                try:
+                    delta = old_effect.value.constant_value()
+                except:
+                    for new_eff in self._transform_increase_decrease_effect(old_effect, new_problem):
+                        new_action.add_effect(new_eff.fluent, new_eff.value, new_eff.condition, new_eff.forall)
+                    continue
+
+                cur_val = solution.get(str(old_effect.fluent))
+                if cur_val is None:
+                    for new_eff in self._transform_increase_decrease_effect(old_effect, new_problem):
+                        new_action.add_effect(new_eff.fluent, new_eff.value, new_eff.condition, new_eff.forall)
+                    continue
+
+                next_val = (cur_val + delta) if old_effect.is_increase() else (cur_val - delta)
+                new_obj = self._get_number_object(new_problem, next_val)
+                if not new_condition.is_true() and requires_arithmetic(new_condition):
+                    expansions = self._expand_condition_with_cp(problem, new_problem, new_condition, solution)
+                    for _, cond in expansions:
+                        new_action.add_effect(new_fluent, new_obj, cond, old_effect.forall)
                 else:
-                    if new_fluent and new_value:
-                        new_action.add_effect(new_fluent, new_value, TRUE(), effect.forall)
+                    new_action.add_effect(new_fluent, new_obj, new_condition, old_effect.forall)
 
-    def _transform_action_integers(self, problem: Problem, new_problem: Problem, old_action: Action) -> List[Action]:
+            # Integer assignment
+            elif old_effect.fluent.type.is_int_type():
+                new_fluent = self._transform_node(problem, new_problem, old_effect.fluent)
+                evaluated_val = evaluate_with_solution(new_problem, old_effect.value, solution)
+                new_value = self._transform_node(problem, new_problem, evaluated_val)
+                if not new_fluent or not new_value:
+                    continue
+                if not new_condition.is_true() and requires_arithmetic(new_condition):
+                    expansions = self._expand_condition_with_cp(problem, new_problem, new_condition, solution)
+                    for _, cond in expansions:
+                        new_action.add_effect(new_fluent, new_value, cond, old_effect.forall)
+                else:
+                    new_action.add_effect(new_fluent, new_value, new_condition, old_effect.forall)
+
+            # Non-integer assignment
+            else:
+                new_fluent = self._transform_node(problem, new_problem, old_effect.fluent)
+                new_value = self._transform_node(problem, new_problem, old_effect.value)
+                if not new_fluent or not new_value:
+                    continue
+                if not new_condition.is_true() and requires_arithmetic(new_condition):
+                    expansions = self._expand_condition_with_cp(problem, new_problem, new_condition, solution)
+                    for _, cond in expansions:
+                        new_action.add_effect(new_fluent, new_value, cond, old_effect.forall)
+                else:
+                    new_action.add_effect(new_fluent, new_value, new_condition, old_effect.forall)
+
+    def _transform_action_integers(self, problem, new_problem, old_action):
         params = OrderedDict(((p.name, p.type) for p in old_action.parameters))
-        # Check if preconditions/effects require CP-SAT
+
         has_arithmetic_preconditions = any(requires_arithmetic(p) for p in old_action.preconditions)
         has_arithmetic_effects = any(
             effect.value.node_type in self.ARITHMETIC_OPS
@@ -473,15 +425,13 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             for effect in old_action.effects
         )
 
-        # No arithmetic: direct transformation, no CP-SAT needed
+        # No arithmetic: direct transformation
         if not has_arithmetic_preconditions and not has_arithmetic_effects:
             new_action = InstantaneousAction(old_action.name, _parameters=params, _env=problem.environment)
-
             for old_precondition in old_action.preconditions:
                 new_precondition = self._transform_node(problem, new_problem, old_precondition)
                 if new_precondition and new_precondition != TRUE():
                     new_action.add_precondition(new_precondition)
-
             for old_effect in old_action.effects:
                 new_fluent = self._transform_node(problem, new_problem, old_effect.fluent)
                 new_value = self._transform_node(problem, new_problem, old_effect.value)
@@ -492,36 +442,29 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                     new_action.add_effect(new_fluent, new_value, new_cond, old_effect.forall)
             return [new_action]
 
-        # Arithmetic: CP-SAT to enumerate all valid assignments
+        # Arithmetic: CP-SAT
         self._object_to_index = {}
         self._index_to_object = {}
-
         variables = bidict({})
         cp_model_obj = cp_model.CpModel()
-        non_arithmetic_precs = []
 
         if has_arithmetic_preconditions:
-            # Add ALL preconditions as constraints
             result_var = add_cp_constraints(problem, And(old_action.preconditions), variables, cp_model_obj,
                                             self._object_to_index)
             cp_model_obj.Add(result_var == 1)
         else:
-            for new_action in old_action.preconditions:
-                transformed = self._transform_node(problem, new_problem, new_action)
-                if transformed and transformed != TRUE():
-                    non_arithmetic_precs.append(transformed)
+            for prec in old_action.preconditions:
+                if not requires_arithmetic(prec):
+                    prec_var = add_cp_constraints(problem, prec, variables, cp_model_obj, self._object_to_index)
+                    cp_model_obj.Add(prec_var == 1)
 
         add_effect_bounds_constraints(problem, variables, cp_model_obj, old_action.effects, self._object_to_index, False)
-
         solutions = solve_with_cp_sat(variables, cp_model_obj)
         if not solutions:
             return []
 
         self._index_to_object = {(t, idx): obj for (t, obj), idx in self._object_to_index.items()}
-
-        return self._create_multiple_actions(
-            old_action, problem, new_problem, params, solutions, variables, non_arithmetic_precs
-        )
+        return self._create_multiple_actions(old_action, problem, new_problem, params, solutions, variables)
 
     def _transform_actions(self, problem: Problem, new_problem: Problem) -> Dict[Action, Action]:
         """Transform all actions by grounding integer parameters into objects."""
@@ -564,14 +507,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
     # ==================== GOALS TRANSFORMATION ====================
 
-    def _get_fluent_exps_in_expression(self, node: FNode) -> set:
-        result = set()
-        if node.is_fluent_exp():
-            result.add(node)
-        for arg in node.args:
-            result.update(self._get_fluent_exps_in_expression(arg))
-        return result
-
     def _add_goal_maintenance_effects(
             self,
             action: Action,
@@ -581,7 +516,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         """
         Adds conditional effects to maintain the truth value of a goal fluent based on the goal expression.
         """
-        goal_fluent_exps = self._get_fluent_exps_in_expression(goal_expr)
+        goal_fluent_exps = get_fluent_exps_in_expression(goal_expr)
         action_modifies_exps = {
             effect.fluent
             for effect in action.effects
@@ -598,12 +533,16 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             return
 
         # Replace modified fluents for its next expression
-        substituted_goal = substitute_modified_fluents(action, goal_expr)
+        substituted_goal = substitute_modified_fluents(action, goal_expr).simplify()
 
         # Add conditional effects with the goal expression as condition to maintain the goal fluent's value
-        action.add_effect(goal_fluent_exp, TRUE(), substituted_goal)
-        action.add_effect(goal_fluent_exp, FALSE(), Not(substituted_goal).simplify())
-
+        if substituted_goal is TRUE():
+            action.add_effect(goal_fluent_exp, TRUE())
+        elif substituted_goal is FALSE():
+            action.add_effect(goal_fluent_exp, FALSE())
+        else:
+            action.add_effect(goal_fluent_exp, TRUE(), substituted_goal)
+            action.add_effect(goal_fluent_exp, FALSE(), Not(substituted_goal))
 
     def _transform_goals(self, problem: Problem, new_problem: Problem) -> None:
         arithmetic_goals = []
@@ -622,7 +561,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                 new_problem.add_goal(transformed)
 
         # Create a predicate for each arithmetic goal
-        self._goal_registry = []
         for i, goal in enumerate(arithmetic_goals):
             fluent_name = f"goal_{i}"
             from unified_planning.model import Fluent
@@ -647,73 +585,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         return None
 
 
-    def _evaluate_with_solution(
-            self,
-            new_problem: Problem,
-            expr: FNode,
-            solution: dict,
-    ) -> Optional[FNode]:
-        """
-        Evaluate an expression using values from a CP-SAT solution.
-
-        Recursively evaluates the expression, replacing variables with their
-        assigned values from the solution. Returns a concrete value or the
-        original expression if evaluation is not possible.
-        """
-        def evaluate_recursive(node: FNode):
-            if node.is_constant():
-                return node.constant_value()
-            if node.is_object_exp():
-                obj = node.object()
-                if hasattr(self, '_object_to_index'):
-                    idx = self._object_to_index.get((obj.type, obj))
-                    if idx is not None:
-                        return idx
-                return None
-            if node.is_fluent_exp() or node.is_parameter_exp():
-                var_str = str(node)
-                if var_str in solution:
-                    val = solution[var_str]
-                    if node.type.is_user_type():
-                        node_type = node.fluent().type if node.is_fluent_exp() else node.parameter().type
-                        return self._get_object_from_index(node_type, val)
-                    return val
-                return None
-            if node.is_true():
-                return True
-            if node.is_false():
-                return False
-            if node.is_plus():
-                values = [evaluate_recursive(arg) for arg in node.args]
-                if all(v is not None for v in values):
-                    return sum(values)
-            if node.is_minus():
-                values = [evaluate_recursive(arg) for arg in node.args]
-                if all(v is not None for v in values):
-                    if len(values) == 1:
-                        return -values[0]
-                    return values[0] - sum(values[1:])
-            if node.is_le():
-                l, r = evaluate_recursive(node.arg(0)), evaluate_recursive(node.arg(1))
-                return (l <= r) if l is not None and r is not None else None
-            if node.is_lt():
-                l, r = evaluate_recursive(node.arg(0)), evaluate_recursive(node.arg(1))
-                return (l < r) if l is not None and r is not None else None
-            if node.is_not():
-                v = evaluate_recursive(node.arg(0))
-                return (not v) if v is not None else None
-            return None
-
-        result = evaluate_recursive(expr)
-        if result is None:
-            return expr
-        elif isinstance(result, bool):
-            return TRUE() if result else FALSE()
-        elif isinstance(result, int):
-            return self._get_number_object(new_problem, result)
-        elif isinstance(result, Object):
-            return ObjectExp(result)
-        return expr
 
     def _transform_fluents(self, problem: Problem, new_problem: Problem):
         """
@@ -770,6 +641,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         new_problem.clear_axioms()
         new_problem.initial_values.clear()
         new_problem.clear_quality_metrics()
+        self._goal_registry = []
 
         # Compute the range of integer values needed across the entire problem
         global_lb, global_ub = compute_integer_range(problem)
