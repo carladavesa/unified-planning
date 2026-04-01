@@ -548,12 +548,6 @@ class ArraysRemover(engines.engine.Engine, CompilerMixin):
                          for dim in range(len(n_elements))] + list(fluent.signature)
 
         new_fluent = Fluent(fluent.name, element_type, new_signature, fluent.environment)
-        # If no default is given but the element type is numeric, provide 0 as default.
-        # This prevents UNDEFINED_INITIAL_NUMERIC for out-of-bounds index positions that
-        # are never used but exist because Index is a shared type (sized by max dimension).
-        if default_value is None and (element_type.is_int_type() or element_type.is_real_type()):
-            from unified_planning.shortcuts import Int, Real
-            default_value = Int(0) if element_type.is_int_type() else Real(0)
         new_problem.add_fluent(new_fluent, default_initial_value=default_value)
 
         # Set initial values

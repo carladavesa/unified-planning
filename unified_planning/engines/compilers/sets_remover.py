@@ -270,12 +270,10 @@ class SetsRemover(engines.engine.Engine, CompilerMixin):
                 or_expr.append(Equals(element, element_set))
             return Or(*or_expr)
 
-    def _transform_subseteq(self, new_problem: Problem, node: FNode) -> FNode:
+    def _transform_subseteq(self, node: FNode) -> FNode:
         """
-        Transform: s1 ⊆ s2
-        - fluent ⊆ fluent: And(Implies(f1(o), f2(o)) for o in objects)
-        - constant ⊆ fluent: And(f2(o) for o in constant_elements)
-        - fluent ⊆ constant: And(Not(f1(o)) for o not in constant_elements)
+        Transform: set in set_fluent(params)
+        Into: set_fluent(element, params)
         """
         set_expr_1 = node.args[0]
         set_expr_2 = node.args[1]
@@ -283,36 +281,15 @@ class SetsRemover(engines.engine.Engine, CompilerMixin):
         assert set_expr_1.is_fluent_exp() or set_expr_1.is_constant(), "First set expression must be a fluent or a constant"
         assert set_expr_2.is_fluent_exp() or set_expr_2.is_constant(), "Second set expression must be a fluent or a constant"
 
-        if set_expr_1.is_fluent_exp() and set_expr_2.is_fluent_exp():
-            # fluent ⊆ fluent: for all o, f1(o) → f2(o)
-            elements_type = set_expr_1.type.elements_type
-            elements = list(new_problem.objects(elements_type))
-            fluent1 = self._fluent_mapping[set_expr_1.fluent().name]
-            fluent2 = self._fluent_mapping[set_expr_2.fluent().name]
-            and_expr = []
-            for e in elements:
-                and_expr.append(Or(Not(fluent1(e, *set_expr_1.args)), fluent2(e, *set_expr_2.args)).simplify())
-            return And(*and_expr)
-        elif set_expr_1.is_constant() and set_expr_2.is_fluent_exp():
-            # constant ⊆ fluent: each constant element must be in the fluent set
+        if set_expr_2.is_fluent_exp():
             new_fluent = self._fluent_mapping[set_expr_2.fluent().name]
-            set_elements = set_expr_1.constant_value()
-            and_expr = []
-            for e in set_elements:
-                new_args = [e.object() if hasattr(e, 'object') else e] + list(set_expr_2.args)
-                and_expr.append(new_fluent(*new_args))
-            return And(*and_expr)
-        elif set_expr_1.is_fluent_exp() and set_expr_2.is_constant():
-            # fluent ⊆ constant: no element of the fluent set may be outside the constant
-            elements_type = set_expr_1.type.elements_type
-            elements = list(new_problem.objects(elements_type))
-            constant_objs = {e.object() if hasattr(e, 'object') else e for e in set_expr_2.constant_value()}
-            fluent1 = self._fluent_mapping[set_expr_1.fluent().name]
-            and_expr = []
-            for e in elements:
-                if e not in constant_objs:
-                    and_expr.append(Not(fluent1(e, *set_expr_1.args)).simplify())
-            return And(*and_expr)
+            if set_expr_1.constant_value():
+                set_elements = set_expr_1.constant_value()
+                and_expr = []
+                for e in set_elements:
+                    new_args = [e] + list(set_expr_2.args)
+                    and_expr.append(new_fluent(*new_args))
+                return And(*and_expr)
         raise NotImplementedError(f"Case of Subseteq not implemented yet")
 
     def _transform_disjoint(self, new_problem: Problem, node: FNode) -> FNode:
@@ -590,7 +567,7 @@ class SetsRemover(engines.engine.Engine, CompilerMixin):
         elif node.is_set_member():
             return self._transform_member(node)
         elif node.is_set_subseteq():
-            return self._transform_subseteq(new_problem, node)
+            return self._transform_subseteq(node)
         elif node.is_set_disjoint():
             return self._transform_disjoint(new_problem, node)
         elif node.is_set_cardinality():
@@ -662,13 +639,12 @@ class SetsRemover(engines.engine.Engine, CompilerMixin):
     def _transform_union_effect(self, old_problem: Problem, new_problem: Problem, effect: Effect) -> Union[Effect, List[Effect], None]:
         """
         Transform: result_set := set1 ∪ set2
-        Into: for each object o:
-          (when (s1(o) or s2(o))           result(o) := true )
-          (when (not s1(o) and not s2(o))  result(o) := false)
+        Into: for each object o: result_set(o) := set1(o) || set2(o)
         """
         new_effects = []
         set1, set2 = effect.value.args
 
+        # No nested expressions allowed
         assert set1.is_fluent_exp() or set1.is_constant() or set1.is_parameter_exp(), \
             "Nesting of Set methods not supported!"
         assert set2.is_fluent_exp() or set2.is_constant() or set2.is_parameter_exp(), \
@@ -676,15 +652,18 @@ class SetsRemover(engines.engine.Engine, CompilerMixin):
 
         elements_type = set1.type.elements_type
         elements = list(new_problem.objects(elements_type))
+
         new_fluent = self._fluent_mapping[effect.fluent.fluent().name]
         fluent1 = self._fluent_mapping[set1.fluent().name]
         fluent2 = self._fluent_mapping[set2.fluent().name]
 
         for elem in elements:
-            in_either = Or(fluent1(elem, *set1.args), fluent2(elem, *set2.args))
+            new_condition = Or(
+                fluent1(elem, *set1.args),
+                fluent2(elem, *set2.args)
+            )
             new_fluent_expr = new_fluent(elem, *effect.fluent.args)
-            new_effects.append(Effect(new_fluent_expr, TRUE(), in_either, effect.kind, effect.forall))
-            new_effects.append(Effect(new_fluent_expr, FALSE(), Not(in_either).simplify(), effect.kind, effect.forall))
+            new_effects.append(Effect(new_fluent_expr, TRUE(), new_condition, effect.kind, effect.forall))
         return new_effects
 
     def _transform_intersect_effect(self, new_problem: Problem, effect: Effect) -> List[Effect]:
@@ -709,25 +688,19 @@ class SetsRemover(engines.engine.Engine, CompilerMixin):
             fluent1 = self._fluent_mapping[set1.fluent().name]
             fluent2 = self._fluent_mapping[set2.fluent().name]
             for elem in elements:
-                in_both = And(fluent1(elem, *set1.args), fluent2(elem, *set2.args))
+                new_condition = And(fluent1(elem, *set1.args), fluent2(elem, *set2.args))
                 new_fluent_expr = new_fluent(elem, *effect.fluent.args)
-                new_effects.append(Effect(new_fluent_expr, TRUE(), in_both, effect.kind, effect.forall))
-                new_effects.append(Effect(new_fluent_expr, FALSE(), Not(in_both).simplify(), effect.kind, effect.forall))
+                new_effects.append(Effect(new_fluent_expr, True, new_condition, effect.kind, effect.forall))
         else:
-            fluent, constant_expr = (set1, set2) if set1.is_fluent_exp() else (set2, set1)
-            constant_objs = {e.object() if hasattr(e, 'object') else e for e in constant_expr.constant_value()}
+            fluent, constant = (set1, set2.constant_value()) if set1.is_fluent_exp() else (set2, set1.constant_value())
             new_fluent_value = self._fluent_mapping[fluent.fluent().name]
-            for elem in elements:
+            for elem in constant:
+                new_condition = new_fluent_value(elem, *fluent.args)
                 new_fluent_expr = new_fluent(elem, *effect.fluent.args)
-                if elem in constant_objs:
-                    in_cond = new_fluent_value(elem, *fluent.args)
-                    new_effects.append(Effect(new_fluent_expr, TRUE(), in_cond, effect.kind, effect.forall))
-                    new_effects.append(Effect(new_fluent_expr, FALSE(), Not(in_cond).simplify(), effect.kind, effect.forall))
-                else:
-                    new_effects.append(Effect(new_fluent_expr, FALSE(), TRUE(), effect.kind, effect.forall))
+                new_effects.append(Effect(new_fluent_expr, True, new_condition, effect.kind, effect.forall))
         return new_effects
 
-    def _transform_difference_effect(self, new_problem: Problem, effect: Effect) -> List[Effect]:
+    def _transform_difference_effect(self, new_problem: Problem, new_action: Action, effect: Effect):
         """
         Transform: result_set := set1 \ set2
         Into: for each object o: result_set(o) := set1(o) & ¬set2(o)
@@ -743,44 +716,31 @@ class SetsRemover(engines.engine.Engine, CompilerMixin):
         elements_type = set1.type.elements_type
         elements = list(new_problem.objects(elements_type))
         new_fluent = self._fluent_mapping[effect.fluent.fluent().name]
-        new_effects = []
 
         if set1.is_fluent_exp() and set2.is_fluent_exp():
             fluent1 = self._fluent_mapping[set1.fluent().name]
             fluent2 = self._fluent_mapping[set2.fluent().name]
             for elem in elements:
-                # result(o) = s1(o) AND NOT s2(o)
-                true_cond = And(fluent1(elem, *set1.args), Not(fluent2(elem, *set2.args)))
+                new_condition = And(fluent1(elem, *set1.args), Not(fluent2(elem, *set2.args)))
                 new_fluent_expr = new_fluent(elem, *effect.fluent.args)
-                new_effects.append(Effect(new_fluent_expr, TRUE(), true_cond, effect.kind, effect.forall))
-                new_effects.append(Effect(new_fluent_expr, FALSE(), Not(true_cond).simplify(), effect.kind, effect.forall))
+                new_action.add_effect(new_fluent_expr, True, new_condition, effect.forall)
 
         elif set1.is_constant():
-            # constant \ fluent: only constant elements not in the fluent survive
-            constant_objs = {e.object() if hasattr(e, 'object') else e for e in set1.constant_value()}
-            new_fluent_value = self._fluent_mapping[set2.fluent().name]
-            for elem in elements:
+            # Constant-first case: include each constant element only if absent in the second operand.
+            constant, fluent = set1.constant_value(), set2
+            new_fluent_value = self._fluent_mapping[fluent.fluent().name]
+            for elem in constant:
+                new_condition = Not(new_fluent_value(elem, *fluent.args))
                 new_fluent_expr = new_fluent(elem, *effect.fluent.args)
-                if elem in constant_objs:
-                    not_in_set2 = Not(new_fluent_value(elem, *set2.args))
-                    new_effects.append(Effect(new_fluent_expr, TRUE(), not_in_set2, effect.kind, effect.forall))
-                    new_effects.append(Effect(new_fluent_expr, FALSE(), Not(not_in_set2).simplify(), effect.kind, effect.forall))
-                else:
-                    new_effects.append(Effect(new_fluent_expr, FALSE(), TRUE(), effect.kind, effect.forall))
+                new_action.add_effect(new_fluent_expr, True, new_condition, effect.forall)
         else:
-            # fluent \ constant: keep only elements of the fluent not in the constant set
-            constant_objs = {o.object() if hasattr(o, 'object') else o for o in set2.constant_value()}
-            new_fluent_value = self._fluent_mapping[set1.fluent().name]
-            for elem in elements:
+            # Constant-second case: keep elements from the first operand that are not in the constant second set.
+            fluent, constant = set1, [o.object() for o in list(set2.constant_value())]
+            new_fluent_value = self._fluent_mapping[fluent.fluent().name]
+            for elem in [e for e in elements if e not in constant]:
+                new_condition = new_fluent_value(elem, *fluent.args)
                 new_fluent_expr = new_fluent(elem, *effect.fluent.args)
-                if elem not in constant_objs:
-                    in_set1 = new_fluent_value(elem, *set1.args)
-                    new_effects.append(Effect(new_fluent_expr, TRUE(), in_set1, effect.kind, effect.forall))
-                    new_effects.append(Effect(new_fluent_expr, FALSE(), Not(in_set1).simplify(), effect.kind, effect.forall))
-                else:
-                    new_effects.append(Effect(new_fluent_expr, FALSE(), TRUE(), effect.kind, effect.forall))
-
-        return new_effects
+                new_action.add_effect(new_fluent_expr, True, new_condition, effect.forall)
 
     def _transform_set_constant_effect(self, new_problem: Problem, effect: Effect):
         """
