@@ -607,7 +607,6 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
             self,
             new_problem: "up.model.AbstractProblem",
             node: "up.model.fnode.FNode",
-            indexes: Optional["up.model.fnode.FNode"] = None,
     ) -> List["up.model.fnode.FNode"]:
         """Return the bit-fluent expansion for an integer fluent expression."""
         assert node.is_fluent_exp()
@@ -714,30 +713,13 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
             value: FNode,
     ) -> Tuple[List[FNode], List[FNode]]:
         """Convert a fluent/value pair into aligned bit-level representations."""
-        name_fluent = fluent.fluent().name.split('[')[0]
-        n_bits = self.n_bits[name_fluent]
-        if fluent.type.is_int_type():
-            new_fluents = self._get_new_fluent(new_problem, fluent)
-            if value.is_fluent_exp():
-                new_values = self._get_new_fluent(new_problem, value)
-            else:
-                assert value.is_constant(), "Value must be a constant!"
-                new_values = self._convert_value(value.constant_value(), n_bits)
+        n_bits = self.n_bits[fluent.fluent().name]
+        new_fluents = self._get_new_fluent(new_problem, fluent)
+        if value.is_fluent_exp():
+            new_values = self._get_new_fluent(new_problem, value)
         else:
-            assert fluent.type.is_array_type()
-            indices = tuple(int(i) for i in re.findall(r'\[([0-9]+)]', fluent.fluent().name))
-            new_fluents = []
-            new_values = []
-            if value.is_fluent_exp():
-                value_fluent_domain = tuple(int(i) for i in re.findall(r'\[([0-9]+)]', value.fluent().name))
-                for combination in self._get_fluent_domain(fluent.fluent()):
-                    new_fluents.append(self._get_new_fluent(new_problem, fluent, indices + combination))
-                    new_values.append(self._get_new_fluent(new_problem, value, value_fluent_domain + combination))
-            else:
-                for combination in self._get_fluent_domain(fluent.fluent()):
-                    new_fluents.append(self._get_new_fluent(new_problem, fluent, indices + combination))
-                    element_value = self._get_element_value(value, combination)
-                    new_values.append(self._convert_value(element_value.constant_value(), n_bits))
+            assert value.is_constant(), "Value must be a constant!"
+            new_values = self._convert_value(value.constant_value(), n_bits)
         return new_fluents, new_values
 
     def _transform_fluents(self, problem: Problem, new_problem: Problem):
