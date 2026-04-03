@@ -1,0 +1,564 @@
+Can you check all the changes made in the compilers and justify them? If they are not necessary or can be implemented differently without touching the compilers better. Ask for any change before
+doing it
+
+  ---
+  arrays_remover.py — 3 changes
+
+  Change 1: new _transform_array_access method
+
+  Necessary. When the parser produces (read (board ?a) ?i ?j), the FNode tree is ArrayRead(ArrayRead(board(?a), i), j) — a chain. The original compiler had no code to handle ARRAY_READ nodes at all;
+  they would fall through to unhandled branches. This method unwinds the chain, collects the concrete integer indices, and maps to the indexed fluent board[i][j](?a). This cannot be done without
+  touching the compiler.
+
+  Change 2: guard in _transform_expression before the array-comparison check
+
+  Necessary. Without it, an ARRAY_READ node reaches the line:
+  if node.args and node.arg(0).type.is_array_type():
+      return self._transform_array_comparison(…)
+  An ARRAY_READ's first arg is indeed array-typed, so it would be misrouted to the comparison handler. The guard must come first.
+
+  Change 3: default_value=Int(0) in _add_array_as_indexed_fluent
+
+  Necessary, but could be done differently. The problem is that the Index user type is shared across all dimensions and sized to max(dimensions). For a 3×4 array, Index has 4 objects (i0…i3), but
+  row-indexed fluents only use i0…i2. The 4th position (i3) gets no initial value → UNDEFINED_INITIAL_NUMERIC.
+
+  An alternative would be to not use a shared Index type and instead create one per dimension, or to create only valid index combinations. However, this would be a much larger refactor of the
+  arrays_remover. The Int(0) default is a correct and safe fix: unused positions get value 0, which is harmless because no valid action can reference them.
+
+  ---
+  int_parameter_actions_remover.py — 2 changes
+
+  Change 1: new _transform_array_access method
+
+  Necessary, and cannot be shared with the one in arrays_remover. IPAR runs before ArraysRemover in the pipeline. At this stage, array indices are still action parameters (e.g., ?r - range), not
+  concrete integers. IPAR must substitute the grounded value of ?r into the index, then check bounds via self.domains, then produce an indexed-fluent expression. ArraysRemover's version assumes indices
+   are already concrete.
+
+  Change 2: guard in _transform_expression
+
+  Necessary, for the same reason as in arrays_remover: without it, ARRAY_READ nodes fall through to _transform_generic, which recurses on children without the domain-bounds check and produces a wrong
+  result.
+
+  ---
+  integers_remover.py — no changes
+
+  Correct. This compiler runs after IPAR and ArraysRemover, at which point all array and bounded-int structure has been eliminated. Nothing needed changing here.
+
+  ---
+  sets_remover.py — 5 changes
+
+  Change 1: _transform_subseteq — added new_problem parameter and fluent-vs-fluent / fluent-vs-constant cases
+
+  Bug fix — necessary. The original code:
+  if set_expr_2.is_fluent_exp():
+      new_fluent = self._fluent_mapping[set_expr_2.fluent().name]
+      if set_expr_1.constant_value():   # ← AssertionError if set_expr_1 is a fluent
+  The constant_value() call asserts is_constant() internally. If both sides are fluents, this crashes. The fluent-vs-fluent case (And(¬f1(o) ∨ f2(o) for o in objects)) is the standard ⊆ encoding. The
+  new_problem parameter is required to enumerate objects. No way around this.
+
+  Change 2: _transform_union_effect — added false effects
+
+  Bug fix — necessary for correct semantics. assign result := s1 ∪ s2 must set result(o) = s1(o) OR s2(o) for every object. The original only set elements to true when the condition held, never to
+  false. If result previously contained elements outside s1 ∪ s2, they would stay true forever. The fix emits a paired false effect with the negated condition.
+
+  Change 3: _transform_intersect_effect — added false effects + fixed constant case
+
+  Bug fix — necessary. Same semantic issue as union: elements outside s1 ∩ s2 must be cleared. Additionally, the constant case was iterating only over the constant elements (missing the elements that
+  should be set to false). Fixed to iterate over all objects and emit both branches.
+
+  Change 4: _transform_difference_effect — signature fix + false effects + constant cases fixed
+
+  Two bugs fixed — both necessary.
+  - Signature bug: called as _transform_difference_effect(new_problem, effect) but declared with (new_problem, new_action, effect). Python would assign new_action=effect and raise TypeError: missing
+  argument. The method was also calling new_action.add_effect(…) inconsistently with the other handlers that return a list. Fixed to (new_problem, effect) -> List[Effect].
+  - Missing false effects: same semantic issue as union/intersect.
+
+  Change 5: call site update for _transform_subseteq
+
+  Necessary consequence of Change 1 — passing new_problem.
+
+  ---
+  Summary
+
+  ┌────────────────┬─────────────────────────────────────────────┬──────────────────────┬───────────────────────────────────────────────────────┐
+  │      File      │                   Change                    │         Type         │                   Could be avoided?                   │
+  ├────────────────┼─────────────────────────────────────────────┼──────────────────────┼───────────────────────────────────────────────────────┤
+  │ arrays_remover │ _transform_array_access                     │ Feature (N-D arrays) │ No                                                    │
+  ├────────────────┼─────────────────────────────────────────────┼──────────────────────┼───────────────────────────────────────────────────────┤
+  │ arrays_remover │ guard in _transform_expression              │ Bug prevention       │ No                                                    │
+  ├────────────────┼─────────────────────────────────────────────┼──────────────────────┼───────────────────────────────────────────────────────┤
+  │ arrays_remover │ default_value=Int(0)                        │ Bug fix              │ Alternative: redesign Index type (much larger change) │
+  ├────────────────┼─────────────────────────────────────────────┼──────────────────────┼───────────────────────────────────────────────────────┤
+  │ ipar           │ _transform_array_access                     │ Feature (N-D arrays) │ No                                                    │
+  ├────────────────┼─────────────────────────────────────────────┼──────────────────────┼───────────────────────────────────────────────────────┤
+  │ ipar           │ guard in _transform_expression              │ Bug prevention       │ No                                                    │
+  ├────────────────┼─────────────────────────────────────────────┼──────────────────────┼───────────────────────────────────────────────────────┤
+  │ sets_remover   │ _transform_subseteq fluent cases            │ Bug fix              │ No                                                    │
+  ├────────────────┼─────────────────────────────────────────────┼──────────────────────┼───────────────────────────────────────────────────────┤
+  │ sets_remover   │ false effects in union/intersect/difference │ Bug fix              │ No                                                    │
+  ├────────────────┼─────────────────────────────────────────────┼──────────────────────┼───────────────────────────────────────────────────────┤
+  │ sets_remover   │ _transform_difference_effect signature      │ Bug fix              │ No                                                    │
+  └────────────────┴─────────────────────────────────────────────┴──────────────────────┴───────────────────────────────────────────────────────┘
+
+  All changes are either necessary to support the new features or fix pre-existing bugs in the sets_remover that were not triggered before because the full set of operators wasn't being exercised. None
+   can be implemented without touching the compilers.
+
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+
+
+ unified_planning/io/up_pddl_reader.py — 3 sites
+
+  When a forall or exists variable has a bounded integer type, a RangeVariable is now created instead of a Variable:
+
+  # Before (at all 3 sites)
+  new_vars[o] = up.model.Variable(o, t)
+
+  # After
+  if t.is_int_type() and t.lower_bound is not None and t.upper_bound is not None:
+      new_vars[o] = up.model.RangeVariable(o, t.lower_bound, t.upper_bound)
+  else:
+      new_vars[o] = up.model.Variable(o, t)
+
+  Sites: precondition/goal stack machine; effect forall for instantaneous actions; effect forall for durative actions. exists is covered by the first site.
+
+  ---
+  unified_planning/model/effect.py — assertion widened
+
+  Effect.__init__ rejected any forall variable that was not a plain Variable. A RangeVariable that appears in the effect body is valid and must be yielded:
+
+  # Before
+  assert isinstance(v, up.model.variable.Variable)
+  # After
+  assert isinstance(v, (up.model.variable.Variable, up.model.range_variable.RangeVariable))
+
+  ---
+  unified_planning/engines/compilers/int_parameter_actions_remover.py — 3 fixes
+
+  1. _transform_expression — VARIABLE_EXP wrapping RangeVariable:
+  The parser always emits VariableExp(range_var) (a VARIABLE_EXP node). The old code passed all VARIABLE_EXP through unchanged. Added substitution when the payload is a RangeVariable:
+
+  if node.is_variable_exp():
+      v = node.variable()
+      if isinstance(v, RangeVariable) and v.name in int_params:
+          return Int(instantiations[int_params[v.name]])
+      return node
+
+  2. _transform_expression — added RANGE_VARIABLE_EXP handler (for completeness):
+
+  if node.is_range_variable_exp():
+      var_name = node.range_variable().name
+      if var_name in int_params:
+          return Int(instantiations[int_params[var_name]])
+      return node
+
+  3. _add_single_effect — missing is_constant() guard:
+  The conditional effects branch called value.constant_value() unconditionally, crashing when the value is a fluent expression (e.g. pancake_stack[k]):
+
+  # Before
+  if (fluent.type.is_int_type() and
+          not fluent.type.lower_bound <= value.constant_value() <= …):
+  # After
+  if (fluent.type.is_int_type() and value.is_constant() and
+          not fluent.type.lower_bound <= value.constant_value() <= …):
+
+  ---
+  docs/extensions/domains/pancake-sorting/pddl-extension/
+
+  - test_pancake.py — updated PROBLEMS range from range(4) to range(1, 5)
+
+✻ Cogitated for 3m 15s
+
+❯ Explain a bit more the changes
+
+● 1. Parser — creating RangeVariable instead of Variable
+
+  Context: PDDL allows (forall (?i - some_type) ...) in effects and preconditions. The parser builds a variable object for ?i by looking up the type. For object types this variable just labels which
+  objects to iterate over, which is handled downstream by IPAR. For bounded integer types the situation is different: the variable is a loop counter over a numeric range.
+
+  What was wrong: The parser always created up.model.Variable(o, t) regardless of whether t was an object type or a bounded integer type. IPAR has two separate expansion paths: one for Variable (object
+   quantifiers, kept as-is or handled by the classical planner) and one for RangeVariable (integer ranges, expanded by IPAR into concrete instantiations). Since ?i was a plain Variable, IPAR silently
+  skipped expansion entirely.
+
+  Why the fix works: RangeVariable stores initial and last (the integer bounds). IPAR's _extract_variables checks isinstance(var, RangeVariable) to decide whether to expand. Creating RangeVariable(o,
+  lower_bound, upper_bound) for bounded integer types means IPAR now recognises these as range variables and expands them.
+
+  The fix is applied at three sites because the effect parsing code has separate paths for instantaneous actions, durative actions, and preconditions/goals — all three independently build the variable
+  objects.
+
+  ---
+  2. effect.py — widening the assertion
+
+  Context: Effect.__init__ validates that every variable listed in forall= is actually free in the effect expression (if it weren't free it would be dead code). It does this by collecting free
+  variables from the fluent, value, and condition FNodes and then checking each forall variable against that set.
+
+  What was wrong: The validator's inner function free_vars_without_duplicates iterated over the forall tuple and, for variables that appeared free, asserted isinstance(v, Variable). This asserts that
+  only plain Variable objects can appear free in an effect — which was true before this feature, because forall was always over object types. After the parser fix, forall over an integer range produces
+   a RangeVariable, and ?i literally appears in the effect body (write ... (?i) ...), so ?i is in the free variables set. The assert fires immediately because RangeVariable is not a subclass of
+  Variable.
+
+  Why the fix works: Widening the assertion to isinstance(v, (Variable, RangeVariable)) lets RangeVariable pass the check. The structural semantics are the same: the variable appears in the expression
+  and is bound by the quantifier. The distinction between Variable and RangeVariable only matters later in IPAR when deciding how to expand it.
+
+  ---
+  3a. IPAR — _transform_expression for VARIABLE_EXP wrapping RangeVariable
+
+  Context: The expression manager has two separate node types: VARIABLE_EXP (for Variable objects) and RANGE_VARIABLE_EXP (for RangeVariable objects). The intent is that code using a range variable
+  should create a RangeVariableExp. However, the parser always creates VariableExp(var) regardless — it calls self._em.VariableExp(var[exp.value[1:]]) when it sees ?i in an expression, and var['i'] is
+  now a RangeVariable after fix 1. So the expression tree contains a VARIABLE_EXP node whose payload is a RangeVariable.
+
+  What was wrong: _transform_expression had a blanket base case:
+  if node.is_constant() or node.is_variable_exp() or node.is_timing_exp():
+      return node  # pass through unchanged
+  VARIABLE_EXP nodes for object quantifiers are supposed to pass through — they remain symbolic until classical grounding. But a VARIABLE_EXP wrapping a RangeVariable should be substituted with a
+  concrete integer (just like a ParameterExp for a bounded-int action parameter). Since all VARIABLE_EXP nodes were passed through, ?i was never substituted. When _transform_array_access then tried to
+  evaluate the index expression, it got back the original ?i node rather than an integer, found idx.is_int_constant() = False, and returned None. The None propagated up, causing the entire action to be
+   pruned.
+
+  Why the fix works: The updated code checks whether the VARIABLE_EXP payload is a RangeVariable with a name registered in int_params:
+  if node.is_variable_exp():
+      v = node.variable()
+      if isinstance(v, RangeVariable) and v.name in int_params:
+          return Int(instantiations[int_params[v.name]])
+      return node
+  int_params maps variable names to their position in the instantiation tuple. When IPAR expands the forall with i=2, it appends 2 to the instantiation tuple and registers 'i' → index. The fix
+  correctly retrieves Int(2) and the array index is now a concrete integer that _transform_array_access can use.
+
+  ---
+  3b. IPAR — RANGE_VARIABLE_EXP handler
+
+  Context: This is a companion fix for the case where a RangeVariableExp node appears directly (i.e. created via RangeVariableExp(var) rather than VariableExp(var)). This doesn't happen with the
+  current parser, but it is the "correct" node type for range variables.
+
+  What was wrong: There was no handler for RANGE_VARIABLE_EXP in _transform_expression. The node would fall through to _transform_generic, which creates a new node from its args. RANGE_VARIABLE_EXP has
+   no args (its variable is stored in the payload, not in args), so _transform_generic would get an empty arg list and return None.
+
+  Why the fix works: The new handler mirrors the VARIABLE_EXP fix: look up the variable name in int_params and substitute. This ensures that if any code path produces a proper RangeVariableExp, it is
+  handled correctly.
+
+  ---
+  3c. IPAR — is_constant() guard in _add_single_effect
+
+  Context: After an effect has been fully transformed, _add_single_effect performs an optional bounds check: if the fluent has a bounded integer type and the value is a constant outside that range, the
+   effect is either pruned (unconditional) or skipped (conditional). For example, writing Int(99) to a fluent of type integer[0, 4] is provably out of bounds and can be dropped.
+
+  What was wrong: The unconditional branch already had a proper guard:
+  if fluent.type.is_int_type() and value.is_constant():
+      if not lower <= value.constant_value() <= upper: ...
+  But the conditional branch had a bug — it called value.constant_value() without the is_constant() guard:
+  if (fluent.type.is_int_type() and
+          not fluent.type.lower_bound <= value.constant_value() <= ...):
+  For the pancake flip action, the effect value is pancake_stack[k] — the current contents of position k, a fluent expression, not a constant. Calling .constant_value() on a non-constant node hits
+  assert self.is_constant() inside FNode.constant_value().
+
+  Why the fix works: Adding value.is_constant() short-circuits before calling constant_value(). When the value is a fluent expression (not a constant), the bounds check is simply skipped and the effect
+   is added as-is — which is correct, since the value will be evaluated at runtime by the planner.
+
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+Now that everything has been justified and studied, do you think that there's any part of the code that is unnecessary? If there have been fixed bugs that were on the compilers previously, list them
+ too.
+
+
+★ Insight ─────────────────────────────────────
+  - The most critical finding is a hard crash in sets_remover._transform_difference_effect: it is declared with 3 arguments but called with 2 — Python silently assigns new_action = effect and then
+  raises TypeError: missing positional argument 'effect'. This means any domain with a set-difference effect is completely broken right now.
+  - The print statement in the reader fires on every single PDDLReader().parse_problem() call, silently polluting stdout in any program that uses the library.
+  ─────────────────────────────────────────────────
+
+  ---
+  Unnecessary code in the branch
+
+  1. Debug print in up_pddl_reader.py:1661
+
+  print(f"\n\n  {types_map}\n")
+
+  This line sits right after the compound type resolution loop and dumps the entire types_map dict to stdout every time parse_problem is called. It is a development artifact with no functional purpose.
+   It leaks internal library state to the user's terminal unconditionally — there is no log level, no flag, no way to suppress it.
+
+  2. Unused import in handcrafted_reader.py
+
+  from docs.code_snippets.pddl_interop import domain_filename
+
+  domain_filename is imported at the top of the file but immediately overridden three lines later:
+
+  domain_filename = f'docs/extensions/domains/{domain}/pddl-extension/domain.pddl'
+
+  The import is dead. It also imports from docs.code_snippets, a path that may not even be resolvable outside the specific project layout it was developed in.
+
+  3. RANGE_VARIABLE_EXP handler in int_parameter_actions_remover.py (§11.4)
+
+  if node.is_range_variable_exp():
+      var_name = node.range_variable().name
+      ...
+
+  The document already acknowledged this: "This does not occur with the current parser". The parser always calls self._em.VariableExp(var) — it never calls RangeVariableExp(var) directly. This handler
+  has zero execution coverage under the current codebase. It is correct and harmless, but it is defensive code for a code path that does not exist.
+
+  ---
+  Pre-existing bugs found during this work
+
+  Fixed and kept — int_parameter_actions_remover._add_single_effect
+
+  # Before (broken since the conditional-effects branch was written)
+  if (fluent.type.is_int_type() and
+          not fluent.type.lower_bound <= value.constant_value() <= fluent.type.upper_bound):
+
+  # After (fixed in this branch)
+  if (fluent.type.is_int_type() and value.is_constant() and
+          not fluent.type.lower_bound <= value.constant_value() <= fluent.type.upper_bound):
+
+  The unconditional branch already had the guard; the conditional branch never did. The bug was latent — it only triggered when an array-read expression (a non-constant FNode) appeared as an effect
+  value, which was impossible before this extension. The fix is now in pddl-extension.
+
+  ---
+  Pre-existing bugs found, fixed, then reverted — still broken in both master and pddl-extension
+
+  These were all reverted in commit be316c65 Revert compiler bugfixes. They remain broken.
+
+  Bug 1 — sets_remover._transform_difference_effect: hard TypeError crash
+
+  # Declaration (3 parameters)
+  def _transform_difference_effect(self, new_problem: Problem, new_action: Action, effect: Effect):
+      ...
+      new_action.add_effect(...)
+
+  # Call site (line 606 — only 2 parameters passed)
+  return self._transform_difference_effect(new_problem, effect)
+
+  Python silently maps new_action = effect (the Effect object) and has no value for effect. The call to new_action.add_effect(...) immediately raises AttributeError: 'Effect' object has no attribute
+  'add_effect'. Every domain that uses a set-difference effect in any action crashes here at compile time. The dump-trucks domain's unload_truck action uses (difference ...) and will hit this.
+
+  Bug 2 — sets_remover._transform_union_effect: elements never cleared
+
+  for elem in elements:
+      new_condition = Or(fluent1(elem, *set1.args), fluent2(elem, *set2.args))
+      new_effects.append(Effect(new_fluent_expr, TRUE(), new_condition, ...))
+  # Missing: Effect(new_fluent_expr, FALSE(), Not(new_condition), ...)
+
+  result := s1 ∪ s2 should set result(o) = True when o ∈ s1 ∨ o ∈ s2 and result(o) = False when o ∉ s1 ∧ o ∉ s2. Only the true branch is emitted. If any element was previously in result but is no
+  longer in s1 ∪ s2, it stays True permanently — the union assignment never clears elements.
+
+  Bug 3 — sets_remover._transform_intersect_effect: elements never cleared, constant case incomplete
+
+  Same semantic issue: only true-branch effects are emitted. For the constant case specifically:
+
+  for elem in constant:   # only elements IN the constant are iterated
+      new_condition = new_fluent_value(elem, *fluent.args)
+      new_effects.append(Effect(new_fluent_expr, True, new_condition, ...))
+
+  Elements of result that are not in the constant intersection are never visited. They retain whatever value they had before the assignment — the intersection never zeros them out.
+
+  Bug 4 — sets_remover._transform_subseteq: AssertionError when both operands are fluents
+
+  if set_expr_2.is_fluent_exp():
+      new_fluent = self._fluent_mapping[set_expr_2.fluent().name]
+      if set_expr_1.constant_value():   # ← line 286, crashes if set_expr_1 is a fluent
+
+  FNode.constant_value() internally calls assert self.is_constant(). If set_expr_1 is a fluent expression (e.g., (subset (package_at ?l1) (package_at ?l2))), this fires. The only case handled is
+  constant-vs-fluent; fluent-vs-fluent always crashes. If neither operand is a fluent, the method falls off to raise NotImplementedError.
+
+  Bug 5 — arrays_remover._add_array_as_indexed_fluent: no default for out-of-bounds positions
+
+  new_problem.add_fluent(new_fluent, default_initial_value=default_value)
+
+  ArraysRemover uses a single shared Index user type sized to max(dimensions). For a non-square array like a 3×4, Index has 4 objects (i0…i3). Row-indexed fluents only cover 3 rows, so position i3
+  receives no explicit initial value and no default — the planner sees UNDEFINED_INITIAL_NUMERIC for those slots. The fix was to pass Int(0) (or Real(0)) as a fallback default. It was reverted. Square
+  arrays and 1-D arrays are unaffected.
+
+  ---
+  Summary
+
+  ┌────────────────────────────────────────────────────────────────┬───────────────────────────────────────┬──────────────────────────────┐
+  │                              Item                              │                 Type                  │            Status            │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ print(f"  {types_map}") in up_pddl_reader.py                   │ Unnecessary debug artifact            │ In branch, should be removed │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ from docs.code_snippets.pddl_interop import domain_filename    │ Dead import                           │ In branch, should be removed │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ RANGE_VARIABLE_EXP handler in IPAR                             │ Defensive, unreachable                │ In branch, harmless          │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ ipar._add_single_effect missing is_constant()                  │ Pre-existing latent bug               │ Fixed in branch              │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ sets_remover._transform_difference_effect signature            │ Hard crash (TypeError)                │ Still broken (reverted)      │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ sets_remover._transform_union_effect missing false effects     │ Semantic bug (elements never cleared) │ Still broken (reverted)      │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ sets_remover._transform_intersect_effect missing false effects │ Semantic bug                          │ Still broken (reverted)      │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ sets_remover._transform_subseteq fluent-vs-fluent              │ Hard crash (AssertionError)           │ Still broken (reverted)      │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ arrays_remover no default for out-of-bounds slots              │ UNDEFINED_INITIAL_NUMERIC             │ Still broken (reverted)      │
+  └────────────────────────────────────────────────────────────────┴───────────────────────────────────────┴──────────────────────────────┘
+
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+❯ What would it take to add that the reading and writing for every typed fluent would be done via the read and write?
+
+● Let me look at the relevant parts of the reader, writer, and type checker before answering.
+
+  Searched for 9 patterns, read 1 file (ctrl+o to expand)
+
+● Good, I have what I need. Let me now give a thorough analysis.
+
+  ★ Insight ─────────────────────────────────────
+  - The key distinction in the codebase is between typed functions (:functions block, return any type) and predicates (:predicates block, implicitly return bool). They are both Fluent objects —
+  distinguishable only by fluent.type.is_bool_type(). read/write for functions is already partially done; predicates require a semantic redesign of the effect model.
+  - The ConverterToPDDLString walker in pddl_writer.py has no handlers for ARRAY_READ or ARRAY_WRITE — it would crash on any problem that was parsed from read/write syntax and then asked to write back
+  out. Round-trip support is completely missing.
+  ─────────────────────────────────────────────────
+
+  ---
+  What it would take: read/write for every typed fluent
+
+  There are four separate concerns, each with a different amount of work.
+
+  ---
+  1. Typed :functions fluents — already done (zero work)
+
+  The scalar cases are already handled. In the parser's solved pass:
+
+  # up_pddl_reader.py ~line 487
+  elif exp[0].value == "read":
+      ...
+      if len(args) == 1:
+          solved.append(base_exp)   # identity — returns the fluent expression unchanged
+
+  And in the effect parser:
+
+  # ~line 808
+  else:
+      # Scalar write: (write (top ?p) val) — equivalent to assign
+      target_node = self._parse_exp(..., exp[1], ...)
+      value_node  = self._parse_exp(..., exp[2], ...)
+
+  So (read (robot_at)), (read (total-cost)), (read (package_at ?l)), and their corresponding write forms already parse correctly and produce standard FLUENT_EXP nodes and assignment effects. The
+  labyrinth domain already uses (write (robot_at) ...) in production.
+
+  This includes set-typed fluents: (read (basket)) already works as an identity. What does not make sense (and would crash) is (read (basket) i) with an index — a set has no positional access — but
+  that is not a valid concept regardless of the syntax.
+
+  ---
+  2. Predicates — requires semantic design decisions + significant work
+
+  Predicates are Fluent objects with fluent.type.is_bool_type() == True. They are declared in :predicates rather than :functions. The critical difference is in how their effects work:
+
+  - A function effect is always an assignment: (assign (f ?args) value) → one Effect with kind = ASSIGN.
+  - A predicate effect is an add or delete: (pred ?args) → one Effect with kind = ADD; (not (pred ?args)) → kind = DELETE.
+
+  These are distinct effect kinds with different semantics — ASSIGN allows arbitrary values; ADD/DELETE only toggle a truth value. Making (write (at ?x ?y) true) work requires deciding: do we map write
+   to add/delete for bool-typed fluents, or do we introduce a boolean assignment effect?
+
+  The library already has a concept of boolean assignment (the rewrite_bool_assignments flag in PDDLWriter) — it handles non-constant boolean assignments by converting them to conditional effects. So
+  the infrastructure exists, but it is not surfaced through write.
+
+  What would need to change:
+
+  a) Effect parser (up_pddl_reader.py):
+
+  The scalar write path currently calls act.add_effect(target_node, value_node, cond) unconditionally. For predicates it would need to detect the bool type and route to a different call:
+
+  # sketch — not actual code
+  if target_node.type.is_bool_type():
+      if value_node.is_true():
+          act.add_effect(target_node, TRUE(), cond)   # add effect
+      elif value_node.is_false():
+          act.add_effect(target_node, FALSE(), cond)  # delete effect
+      else:
+          # non-constant boolean — requires rewrite_bool_assignments path
+          raise SyntaxError("non-constant bool write requires rewrite_bool_assignments")
+  else:
+      act.add_effect(target_node, value_node, cond)   # assignment as today
+
+  b) transition.py:
+
+  add_effect already handles both boolean and non-boolean fluents — the distinction is internal. No changes needed there, but the add/delete distinction would need to be preserved.
+
+  c) Type checker (type_checker.py):
+
+  The current walk_array_read handler calls expression.arg(0).type.elements_type. For a scalar (read (pred ?args)) where a ARRAY_READ node was created (which currently does NOT happen — scalar reads
+  are transparent), the handler would crash because BoolType has no .elements_type. But since scalar reads stay transparent, this is only a problem if we later decide to make scalar reads produce
+  explicit ARRAY_READ nodes (see §4 below).
+
+  ---
+  3. PDDL writer (round-trip) — moderate work, well-contained
+
+  The ConverterToPDDLString walker in pddl_writer.py:196 has handlers for every operator kind that can appear in an expression. It currently has no handlers for ARRAY_READ or ARRAY_WRITE. If the walker
+   encounters those nodes (e.g., when writing a problem that was parsed from read/write syntax), it falls to walk_error and raises NotImplementedError.
+
+  There are two parts:
+
+  a) Expression converter — two new walk methods:
+
+  # pddl_writer.py — inside ConverterToPDDLString
+  def walk_array_read(self, expression, args):
+      # args[0] = string for the array sub-expression
+      # args[1] = string for the index
+      return f"(read {args[0]} {args[1]})"
+
+  def walk_array_write(self, expression, args):
+      return f"(write {args[0]} {args[1]})"
+
+  Because the walker is bottom-up, args already contains the string representations of the children. For a chain ArrayRead(ArrayRead(board(?a), ?i), ?j) this would naturally produce (read (read (board
+  ?a) ?i) ?j) — which is NOT the intended PDDL syntax (read (board ?a) ?i ?j). So the writer would need to detect and flatten the chain, the same way the parser chains them on input.
+
+  b) Effect serializer — _write_effect in pddl_writer.py:1250:
+
+  The function currently assumes effect.fluent is always a FLUENT_EXP and emits (assign {fluent} {value}). For array-write effects, effect.fluent is an ARRAY_WRITE chain and the correct output is
+  (write ...) syntax.
+
+  The modification is: detect whether effect.fluent.is_array_write(), unwrap the chain to recover the base fluent and indices, and emit the appropriate (write ...) form. For N-D targets this requires
+  the same chain-unwinding logic already implemented in _transform_array_access in both compilers.
+
+  c) Type declarations writer:
+
+  The section that writes :types currently emits typename - parent_name. For compound types (_ArrayType, _SetType, _IntType with bounds), it would need to emit the constructor syntax typename - (array
+  d1 d2 T), etc. The writer currently has no handler for these — it would need to inspect fluent.type and emit the constructor form.
+
+  ---
+  4. IR uniformity (making scalar read produce an ARRAY_READ node) — small but ripples
+
+  Currently (read (f ?args)) with one argument is transparent at the IR level — no ARRAY_READ node is created. This means the IR cannot distinguish "this expression came from a read call" from "this
+  expression is a bare fluent reference". If uniformity is desired — every fluent access goes through ARRAY_READ — the cost is small but it touches many files:
+
+  ┌──────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────┬───────┐
+  │               File               │                                               Change                                                │ Lines │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ up_pddl_reader.py                │ Remove the if len(args) == 1: solved.append(base_exp) shortcut; always create ARRAY_READ            │ ~3    │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ type_checker.py                  │ walk_array_read: if arg(0).type is not array-typed, return arg(0).type directly                     │ ~3    │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ arrays_remover.py                │ _transform_array_access: if chain bottoms out with zero indices, return the fluent expression as-is │ ~5    │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ int_parameter_actions_remover.py │ Same as above                                                                                       │ ~5    │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ simplifier.py                    │ Already handles ARRAY_READ correctly — no change needed                                             │ 0     │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ pddl_writer.py                   │ walk_fluent_exp would no longer be called for typed function reads; walk_array_read covers it       │ ~5    │
+  └──────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────┴───────┘
+
+  The total is roughly 20 lines of changes across 5 files. However, the practical value is low: the only benefit is a more uniform IR — code that wants to check "is this a read of a typed fluent" can
+  check is_array_read() instead of is_fluent_exp(). It does not change any observable behaviour at the PDDL or planning level. The current transparent-scalar approach is simpler and works.
+
+  ---
+  Summary
+
+  ┌────────────────────────────────────────────────────────────┬───────────────────────┬─────────────────────────────────────────────────────────────────────────────┐
+  │                          Feature                           │        Status         │                                   Effort                                    │
+  ├────────────────────────────────────────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ Scalar read/write for any typed :functions fluent          │ Already works         │ 0                                                                           │
+  ├────────────────────────────────────────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ read/write for predicates                                  │ Missing               │ Medium — requires semantic decisions + parser + effect routing              │
+  ├────────────────────────────────────────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ PDDL writer round-trip (write → serialize → write)         │ Missing — would crash │ Moderate — 2 new walk methods + chain-flattening + type-declaration emitter │
+  ├────────────────────────────────────────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ IR uniformity (always produce ARRAY_READ for scalar reads) │ Optional              │ Small (~20 lines across 5 files) — low practical value                      │
+  └────────────────────────────────────────────────────────────┴───────────────────────┴─────────────────────────────────────────────────────────────────────────────┘
+
+  The largest open question before any implementation is the predicate case: do you want (write (pred ?args) false) to mean a delete effect, and if so, how does it interact with non-constant boolean
+  values and the existing rewrite_bool_assignments machinery?
+
+✻ Brewed for 6m 31s

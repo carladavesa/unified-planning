@@ -334,6 +334,12 @@ class Simplifier(walkers.dag.DagWalker):
     def walk_dot(self, expression: FNode, args: List[FNode]) -> FNode:
         return self.manager.Dot(expression.agent(), args[0])
 
+    def walk_array_read(self, expression, args, **kwargs):
+        return self.manager.ArrayRead(args[0], args[1])
+
+    def walk_array_write(self, expression, args, **kwargs):
+        return self.manager.ArrayWrite(args[0], args[1])
+
     def walk_count(self, expression: FNode, args: List[FNode]) -> FNode:
         new_args_count: List[FNode] = list()
         for a in args:

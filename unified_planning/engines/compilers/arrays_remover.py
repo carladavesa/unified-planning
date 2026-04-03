@@ -276,6 +276,47 @@ class ArraysRemover(engines.engine.Engine, CompilerMixin):
         em = old_problem.environment.expression_manager
         return em.create_node(node.node_type, tuple(new_args), tuple(node.variables())).simplify()
 
+    def _transform_array_access(
+            self,
+            old_problem: Problem,
+            new_problem: Problem,
+            node: FNode,
+    ) -> Union[FNode, None]:
+        """
+        Transform ARRAY_READ or ARRAY_WRITE into an indexed fluent call.
+        Supports N-dimensional arrays by unwinding the chain of ARRAY_READ/WRITE nodes.
+        Expects all indices to be constant integers (i.e., after int-param removal).
+        (read (board ?a) Int(1) Int(2)) → board(i1, i2, ?a)
+        """
+        # Unwind the chain of ARRAY_READ/ARRAY_WRITE nodes to collect all indices
+        indices = []
+        current = node
+        while current.is_array_read() or current.is_array_write():
+            idx = self._transform_expression(old_problem, new_problem, current.arg(1))
+            if idx is None or not idx.is_int_constant():
+                return None
+            indices.insert(0, idx.constant_value())
+            current = current.arg(0)
+
+        if not current.is_fluent_exp():
+            return None
+
+        base_name = current.fluent().name.split('[')[0]
+        indexed_name = base_name + "".join(f"[{k}]" for k in indices)
+
+        index_params = self._extract_array_indices(new_problem, indexed_name)
+        if index_params is None:
+            return None
+
+        new_fluent = new_problem.fluent(base_name)
+        new_args = [
+            self._transform_expression(old_problem, new_problem, a)
+            for a in current.args
+        ]
+        if any(a is None for a in new_args):
+            return None
+        return new_fluent(*(index_params + new_args))
+
     def _transform_expression(
             self,
             old_problem: Problem,
@@ -289,6 +330,10 @@ class ArraysRemover(engines.engine.Engine, CompilerMixin):
             return self._transform_fluent_exp(old_problem, new_problem, node)
         if node.is_forall() or node.is_exists():
             return self._transform_quantifier(old_problem, new_problem, node)
+        # ARRAY_READ/ARRAY_WRITE: resolve to indexed fluent — must come before the
+        # array-comparison check below, which would misinterpret these nodes.
+        if node.is_array_read() or node.is_array_write():
+            return self._transform_array_access(old_problem, new_problem, node)
         # Special case: array fluent comparisons
         if node.args and node.arg(0).type.is_array_type():
             return self._transform_array_comparison(new_problem, node)
