@@ -56,6 +56,12 @@ COMPILATION_PIPELINES = {
         CompilationKind.COUNT_INT_REMOVING,
         #CompilationKind.USERTYPE_FLUENTS_REMOVING,
     ],
+    'all' : [
+        CompilationKind.SETS_REMOVING,
+        CompilationKind.COUNT_REMOVING,
+        CompilationKind.USERTYPE_FLUENTS_REMOVING,
+        CompilationKind.INTEGERS_REMOVING,
+    ],
     'None': []
 }
 

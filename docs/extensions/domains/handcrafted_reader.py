@@ -15,8 +15,8 @@ problem = reader.parse_problem(domain_filename, problem_filename)
 compilation_solving.compile_and_solve(problem, solving, compilation='up') #,compilation_kinds_to_apply=[]
 '''
 
-domain = 'labyrinth'
-instance = 'i1'
+domain = 'dump-trucks'
+instance = 'i0'
 solving = 'fast-downward'
 
 reader = PDDLReader()
@@ -26,4 +26,4 @@ problem_filename = f'docs/extensions/domains/{domain}/pddl-extension/{instance}.
 problem = reader.parse_problem(domain_filename, problem_filename)
 
 #['up', 'int', 'uti', 'log', 'c', 'ci', 'cin', 'sc', 'sci', 'scin', 'None']
-compilation_solving.compile_and_solve(problem, solving, compilation='uti')
+compilation_solving.compile_and_solve(problem, solving, compilation='all')
