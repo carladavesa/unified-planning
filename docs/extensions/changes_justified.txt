@@ -258,72 +258,307 @@ doing it
 ------------------------------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+Now that everything has been justified and studied, do you think that there's any part of the code that is unnecessary? If there have been fixed bugs that were on the compilers previously, list them
+ too.
 
-Given the constraints that pddl and planning languages in general have, do you think that I
- should be able to iterate thruogh a bounded-integer-variable as I do in the pancake-sorting
-domain?
 
-● This is a good design question. The short answer is yes, with an important caveat about
-  arithmetic escaping the type bounds.
+★ Insight ─────────────────────────────────────
+  - The most critical finding is a hard crash in sets_remover._transform_difference_effect: it is declared with 3 arguments but called with 2 — Python silently assigns new_action = effect and then
+  raises TypeError: missing positional argument 'effect'. This means any domain with a set-difference effect is completely broken right now.
+  - The print statement in the reader fires on every single PDDLReader().parse_problem() call, silently polluting stdout in any program that uses the library.
+  ─────────────────────────────────────────────────
 
-  Why it is natural
+  ---
+  Unnecessary code in the branch
 
-  A bounded integer type (number 0 4) is, semantically, just a finite ordered set of five
-  values. It is no different in principle from a user type with five named objects:
+  1. Debug print in up_pddl_reader.py:1661
 
-  ; These are semantically equivalent for forall purposes:
-  pancakes - (number 0 4)
-  pancakes - object   (:objects n0 n1 n2 n3 n4 - pancakes)
+  print(f"\n\n  {types_map}\n")
 
-  Standard PDDL already permits forall (?x - obj_type) in effects. Since a bounded integer
-  type is just a finite type, iterating over it is a direct and justified extension. IPAR
-  already grounds integer action parameters for the same reason — the forall case is identical
-   logic applied to quantifier variables instead of action parameters.
+  This line sits right after the compound type resolution loop and dumps the entire types_map dict to stdout every time parse_problem is called. It is a development artifact with no functional purpose.
+   It leaks internal library state to the user's terminal unconditionally — there is no log level, no flag, no way to suppress it.
 
-  Without this, you would need five separate actions to express a pancake flip, or macros, or
-  some other workaround that obscures the intent.
+  2. Unused import in handcrafted_reader.py
 
-  The real issue: arithmetic that escapes the bounds
+  from docs.code_snippets.pddl_interop import domain_filename
 
-  The pancake domain highlights the one genuine complication. The expression (- ?f ?i) is
-  arithmetic over two bounded integers — but the result can fall outside the type bounds:
+  domain_filename is imported at the top of the file but immediately overridden three lines later:
 
-  - flip_0 with ?i = 1 → index 0 - 1 = -1, which is out of bounds
+  domain_filename = f'docs/extensions/domains/{domain}/pddl-extension/domain.pddl'
 
-  This cannot happen with plain object quantification because object identity has no
-  arithmetic. The implementation handles it by silently pruning out-of-bounds array accesses
-  (returning None from _transform_array_access), and the PDDL-side guard (when (<= ?i ?f) ...)
-   makes those conditional effects inactive anyway. The two defences happen to agree.
+  The import is dead. It also imports from docs.code_snippets, a path that may not even be resolvable outside the specific project layout it was developed in.
 
-  But that silent pruning is a semantic assumption baked into the compiler, not a guarantee
-  from the type system. The type system says (- ?f ?i) has type integer — it does not
-  guarantee the result is still a valid pancakes index. A stricter type checker could
-  legitimately reject the domain.
+  3. RANGE_VARIABLE_EXP handler in int_parameter_actions_remover.py (§11.4)
 
-  The right mental model
+  if node.is_range_variable_exp():
+      var_name = node.range_variable().name
+      ...
 
-  The when guard is doing the real work. The correct way to read the action is:
+  The document already acknowledged this: "This does not occur with the current parser". The parser always calls self._em.VariableExp(var) — it never calls RangeVariableExp(var) directly. This handler
+  has zero execution coverage under the current codebase. It is correct and harmless, but it is defensive code for a code path that does not exist.
 
-  ▎ For each position ?i in the full range: if it is within the flip prefix, write the swapped
-   value; otherwise, do nothing.
+  ---
+  Pre-existing bugs found during this work
 
-  This is idiomatic PDDL — the when restricts which iterations have effects. The fact that (-
-  ?f ?i) is only evaluated on the true branch (where ?i <= ?f guarantees ?f - ?i >= 0) is what
-   makes the domain semantically sound. IPAR's silent pruning is just a consequence of that
-  guard already having eliminated the problematic cases.
+  Fixed and kept — int_parameter_actions_remover._add_single_effect
 
-  Verdict
+  # Before (broken since the conditional-effects branch was written)
+  if (fluent.type.is_int_type() and
+          not fluent.type.lower_bound <= value.constant_value() <= fluent.type.upper_bound):
 
-  Yes, you should be able to do this. It is:
-  - Semantically justified — bounded integers are finite types, forall over them is natural
-  - Practically necessary — no reasonable PDDL alternative exists for expressing a
-  simultaneous prefix reversal
-  - Correct — the when guard ensures arithmetic only produces valid indices on the branches
-  where it matters
+  # After (fixed in this branch)
+  if (fluent.type.is_int_type() and value.is_constant() and
+          not fluent.type.lower_bound <= value.constant_value() <= fluent.type.upper_bound):
 
-  The one thing worth documenting is that arithmetic expressions over bounded integer range
-  variables are not bounds-checked by the type system — the planner/compiler relies on when
-  guards to keep them valid. This is a reasonable responsibility to place on the domain
-  author, the same way standard PDDL places the responsibility of writing correct
-  preconditions on the author.
+  The unconditional branch already had the guard; the conditional branch never did. The bug was latent — it only triggered when an array-read expression (a non-constant FNode) appeared as an effect
+  value, which was impossible before this extension. The fix is now in pddl-extension.
 
+  ---
+  Pre-existing bugs found, fixed, then reverted — still broken in both master and pddl-extension
+
+  These were all reverted in commit be316c65 Revert compiler bugfixes. They remain broken.
+
+  Bug 1 — sets_remover._transform_difference_effect: hard TypeError crash
+
+  # Declaration (3 parameters)
+  def _transform_difference_effect(self, new_problem: Problem, new_action: Action, effect: Effect):
+      ...
+      new_action.add_effect(...)
+
+  # Call site (line 606 — only 2 parameters passed)
+  return self._transform_difference_effect(new_problem, effect)
+
+  Python silently maps new_action = effect (the Effect object) and has no value for effect. The call to new_action.add_effect(...) immediately raises AttributeError: 'Effect' object has no attribute
+  'add_effect'. Every domain that uses a set-difference effect in any action crashes here at compile time. The dump-trucks domain's unload_truck action uses (difference ...) and will hit this.
+
+  Bug 2 — sets_remover._transform_union_effect: elements never cleared
+
+  for elem in elements:
+      new_condition = Or(fluent1(elem, *set1.args), fluent2(elem, *set2.args))
+      new_effects.append(Effect(new_fluent_expr, TRUE(), new_condition, ...))
+  # Missing: Effect(new_fluent_expr, FALSE(), Not(new_condition), ...)
+
+  result := s1 ∪ s2 should set result(o) = True when o ∈ s1 ∨ o ∈ s2 and result(o) = False when o ∉ s1 ∧ o ∉ s2. Only the true branch is emitted. If any element was previously in result but is no
+  longer in s1 ∪ s2, it stays True permanently — the union assignment never clears elements.
+
+  Bug 3 — sets_remover._transform_intersect_effect: elements never cleared, constant case incomplete
+
+  Same semantic issue: only true-branch effects are emitted. For the constant case specifically:
+
+  for elem in constant:   # only elements IN the constant are iterated
+      new_condition = new_fluent_value(elem, *fluent.args)
+      new_effects.append(Effect(new_fluent_expr, True, new_condition, ...))
+
+  Elements of result that are not in the constant intersection are never visited. They retain whatever value they had before the assignment — the intersection never zeros them out.
+
+  Bug 4 — sets_remover._transform_subseteq: AssertionError when both operands are fluents
+
+  if set_expr_2.is_fluent_exp():
+      new_fluent = self._fluent_mapping[set_expr_2.fluent().name]
+      if set_expr_1.constant_value():   # ← line 286, crashes if set_expr_1 is a fluent
+
+  FNode.constant_value() internally calls assert self.is_constant(). If set_expr_1 is a fluent expression (e.g., (subset (package_at ?l1) (package_at ?l2))), this fires. The only case handled is
+  constant-vs-fluent; fluent-vs-fluent always crashes. If neither operand is a fluent, the method falls off to raise NotImplementedError.
+
+  Bug 5 — arrays_remover._add_array_as_indexed_fluent: no default for out-of-bounds positions
+
+  new_problem.add_fluent(new_fluent, default_initial_value=default_value)
+
+  ArraysRemover uses a single shared Index user type sized to max(dimensions). For a non-square array like a 3×4, Index has 4 objects (i0…i3). Row-indexed fluents only cover 3 rows, so position i3
+  receives no explicit initial value and no default — the planner sees UNDEFINED_INITIAL_NUMERIC for those slots. The fix was to pass Int(0) (or Real(0)) as a fallback default. It was reverted. Square
+  arrays and 1-D arrays are unaffected.
+
+  ---
+  Summary
+
+  ┌────────────────────────────────────────────────────────────────┬───────────────────────────────────────┬──────────────────────────────┐
+  │                              Item                              │                 Type                  │            Status            │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ print(f"  {types_map}") in up_pddl_reader.py                   │ Unnecessary debug artifact            │ In branch, should be removed │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ from docs.code_snippets.pddl_interop import domain_filename    │ Dead import                           │ In branch, should be removed │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ RANGE_VARIABLE_EXP handler in IPAR                             │ Defensive, unreachable                │ In branch, harmless          │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ ipar._add_single_effect missing is_constant()                  │ Pre-existing latent bug               │ Fixed in branch              │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ sets_remover._transform_difference_effect signature            │ Hard crash (TypeError)                │ Still broken (reverted)      │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ sets_remover._transform_union_effect missing false effects     │ Semantic bug (elements never cleared) │ Still broken (reverted)      │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ sets_remover._transform_intersect_effect missing false effects │ Semantic bug                          │ Still broken (reverted)      │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ sets_remover._transform_subseteq fluent-vs-fluent              │ Hard crash (AssertionError)           │ Still broken (reverted)      │
+  ├────────────────────────────────────────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ arrays_remover no default for out-of-bounds slots              │ UNDEFINED_INITIAL_NUMERIC             │ Still broken (reverted)      │
+  └────────────────────────────────────────────────────────────────┴───────────────────────────────────────┴──────────────────────────────┘
+
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+❯ What would it take to add that the reading and writing for every typed fluent would be done via the read and write?
+
+● Let me look at the relevant parts of the reader, writer, and type checker before answering.
+
+  Searched for 9 patterns, read 1 file (ctrl+o to expand)
+
+● Good, I have what I need. Let me now give a thorough analysis.
+
+  ★ Insight ─────────────────────────────────────
+  - The key distinction in the codebase is between typed functions (:functions block, return any type) and predicates (:predicates block, implicitly return bool). They are both Fluent objects —
+  distinguishable only by fluent.type.is_bool_type(). read/write for functions is already partially done; predicates require a semantic redesign of the effect model.
+  - The ConverterToPDDLString walker in pddl_writer.py has no handlers for ARRAY_READ or ARRAY_WRITE — it would crash on any problem that was parsed from read/write syntax and then asked to write back
+  out. Round-trip support is completely missing.
+  ─────────────────────────────────────────────────
+
+  ---
+  What it would take: read/write for every typed fluent
+
+  There are four separate concerns, each with a different amount of work.
+
+  ---
+  1. Typed :functions fluents — already done (zero work)
+
+  The scalar cases are already handled. In the parser's solved pass:
+
+  # up_pddl_reader.py ~line 487
+  elif exp[0].value == "read":
+      ...
+      if len(args) == 1:
+          solved.append(base_exp)   # identity — returns the fluent expression unchanged
+
+  And in the effect parser:
+
+  # ~line 808
+  else:
+      # Scalar write: (write (top ?p) val) — equivalent to assign
+      target_node = self._parse_exp(..., exp[1], ...)
+      value_node  = self._parse_exp(..., exp[2], ...)
+
+  So (read (robot_at)), (read (total-cost)), (read (package_at ?l)), and their corresponding write forms already parse correctly and produce standard FLUENT_EXP nodes and assignment effects. The
+  labyrinth domain already uses (write (robot_at) ...) in production.
+
+  This includes set-typed fluents: (read (basket)) already works as an identity. What does not make sense (and would crash) is (read (basket) i) with an index — a set has no positional access — but
+  that is not a valid concept regardless of the syntax.
+
+  ---
+  2. Predicates — requires semantic design decisions + significant work
+
+  Predicates are Fluent objects with fluent.type.is_bool_type() == True. They are declared in :predicates rather than :functions. The critical difference is in how their effects work:
+
+  - A function effect is always an assignment: (assign (f ?args) value) → one Effect with kind = ASSIGN.
+  - A predicate effect is an add or delete: (pred ?args) → one Effect with kind = ADD; (not (pred ?args)) → kind = DELETE.
+
+  These are distinct effect kinds with different semantics — ASSIGN allows arbitrary values; ADD/DELETE only toggle a truth value. Making (write (at ?x ?y) true) work requires deciding: do we map write
+   to add/delete for bool-typed fluents, or do we introduce a boolean assignment effect?
+
+  The library already has a concept of boolean assignment (the rewrite_bool_assignments flag in PDDLWriter) — it handles non-constant boolean assignments by converting them to conditional effects. So
+  the infrastructure exists, but it is not surfaced through write.
+
+  What would need to change:
+
+  a) Effect parser (up_pddl_reader.py):
+
+  The scalar write path currently calls act.add_effect(target_node, value_node, cond) unconditionally. For predicates it would need to detect the bool type and route to a different call:
+
+  # sketch — not actual code
+  if target_node.type.is_bool_type():
+      if value_node.is_true():
+          act.add_effect(target_node, TRUE(), cond)   # add effect
+      elif value_node.is_false():
+          act.add_effect(target_node, FALSE(), cond)  # delete effect
+      else:
+          # non-constant boolean — requires rewrite_bool_assignments path
+          raise SyntaxError("non-constant bool write requires rewrite_bool_assignments")
+  else:
+      act.add_effect(target_node, value_node, cond)   # assignment as today
+
+  b) transition.py:
+
+  add_effect already handles both boolean and non-boolean fluents — the distinction is internal. No changes needed there, but the add/delete distinction would need to be preserved.
+
+  c) Type checker (type_checker.py):
+
+  The current walk_array_read handler calls expression.arg(0).type.elements_type. For a scalar (read (pred ?args)) where a ARRAY_READ node was created (which currently does NOT happen — scalar reads
+  are transparent), the handler would crash because BoolType has no .elements_type. But since scalar reads stay transparent, this is only a problem if we later decide to make scalar reads produce
+  explicit ARRAY_READ nodes (see §4 below).
+
+  ---
+  3. PDDL writer (round-trip) — moderate work, well-contained
+
+  The ConverterToPDDLString walker in pddl_writer.py:196 has handlers for every operator kind that can appear in an expression. It currently has no handlers for ARRAY_READ or ARRAY_WRITE. If the walker
+   encounters those nodes (e.g., when writing a problem that was parsed from read/write syntax), it falls to walk_error and raises NotImplementedError.
+
+  There are two parts:
+
+  a) Expression converter — two new walk methods:
+
+  # pddl_writer.py — inside ConverterToPDDLString
+  def walk_array_read(self, expression, args):
+      # args[0] = string for the array sub-expression
+      # args[1] = string for the index
+      return f"(read {args[0]} {args[1]})"
+
+  def walk_array_write(self, expression, args):
+      return f"(write {args[0]} {args[1]})"
+
+  Because the walker is bottom-up, args already contains the string representations of the children. For a chain ArrayRead(ArrayRead(board(?a), ?i), ?j) this would naturally produce (read (read (board
+  ?a) ?i) ?j) — which is NOT the intended PDDL syntax (read (board ?a) ?i ?j). So the writer would need to detect and flatten the chain, the same way the parser chains them on input.
+
+  b) Effect serializer — _write_effect in pddl_writer.py:1250:
+
+  The function currently assumes effect.fluent is always a FLUENT_EXP and emits (assign {fluent} {value}). For array-write effects, effect.fluent is an ARRAY_WRITE chain and the correct output is
+  (write ...) syntax.
+
+  The modification is: detect whether effect.fluent.is_array_write(), unwrap the chain to recover the base fluent and indices, and emit the appropriate (write ...) form. For N-D targets this requires
+  the same chain-unwinding logic already implemented in _transform_array_access in both compilers.
+
+  c) Type declarations writer:
+
+  The section that writes :types currently emits typename - parent_name. For compound types (_ArrayType, _SetType, _IntType with bounds), it would need to emit the constructor syntax typename - (array
+  d1 d2 T), etc. The writer currently has no handler for these — it would need to inspect fluent.type and emit the constructor form.
+
+  ---
+  4. IR uniformity (making scalar read produce an ARRAY_READ node) — small but ripples
+
+  Currently (read (f ?args)) with one argument is transparent at the IR level — no ARRAY_READ node is created. This means the IR cannot distinguish "this expression came from a read call" from "this
+  expression is a bare fluent reference". If uniformity is desired — every fluent access goes through ARRAY_READ — the cost is small but it touches many files:
+
+  ┌──────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────────────┬───────┐
+  │               File               │                                               Change                                                │ Lines │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ up_pddl_reader.py                │ Remove the if len(args) == 1: solved.append(base_exp) shortcut; always create ARRAY_READ            │ ~3    │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ type_checker.py                  │ walk_array_read: if arg(0).type is not array-typed, return arg(0).type directly                     │ ~3    │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ arrays_remover.py                │ _transform_array_access: if chain bottoms out with zero indices, return the fluent expression as-is │ ~5    │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ int_parameter_actions_remover.py │ Same as above                                                                                       │ ~5    │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ simplifier.py                    │ Already handles ARRAY_READ correctly — no change needed                                             │ 0     │
+  ├──────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┼───────┤
+  │ pddl_writer.py                   │ walk_fluent_exp would no longer be called for typed function reads; walk_array_read covers it       │ ~5    │
+  └──────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────┴───────┘
+
+  The total is roughly 20 lines of changes across 5 files. However, the practical value is low: the only benefit is a more uniform IR — code that wants to check "is this a read of a typed fluent" can
+  check is_array_read() instead of is_fluent_exp(). It does not change any observable behaviour at the PDDL or planning level. The current transparent-scalar approach is simpler and works.
+
+  ---
+  Summary
+
+  ┌────────────────────────────────────────────────────────────┬───────────────────────┬─────────────────────────────────────────────────────────────────────────────┐
+  │                          Feature                           │        Status         │                                   Effort                                    │
+  ├────────────────────────────────────────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ Scalar read/write for any typed :functions fluent          │ Already works         │ 0                                                                           │
+  ├────────────────────────────────────────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ read/write for predicates                                  │ Missing               │ Medium — requires semantic decisions + parser + effect routing              │
+  ├────────────────────────────────────────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ PDDL writer round-trip (write → serialize → write)         │ Missing — would crash │ Moderate — 2 new walk methods + chain-flattening + type-declaration emitter │
+  ├────────────────────────────────────────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────────┤
+  │ IR uniformity (always produce ARRAY_READ for scalar reads) │ Optional              │ Small (~20 lines across 5 files) — low practical value                      │
+  └────────────────────────────────────────────────────────────┴───────────────────────┴─────────────────────────────────────────────────────────────────────────────┘
+
+  The largest open question before any implementation is the predicate case: do you want (write (pred ?args) false) to mean a delete effect, and if so, how does it interact with non-constant boolean
+  values and the existing rewrite_bool_assignments machinery?
+
+✻ Brewed for 6m 31s
