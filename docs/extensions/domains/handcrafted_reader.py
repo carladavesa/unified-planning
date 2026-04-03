@@ -15,8 +15,8 @@ problem = reader.parse_problem(domain_filename, problem_filename)
 compilation_solving.compile_and_solve(problem, solving, compilation='up') #,compilation_kinds_to_apply=[]
 '''
 
-domain = 'pancake-sorting'
-instance = 'i4'
+domain = 'labyrinth'
+instance = 'i1'
 solving = 'fast-downward'
 
 reader = PDDLReader()

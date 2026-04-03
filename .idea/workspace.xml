@@ -5,18 +5,21 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="7c60bccf-105d-46ba-a2c0-79b47893c82f" name="Changes" comment="New problems and instances">
-      <change afterPath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/pddl-extension/i4.pddl" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/docs/extensions/domains/labyrinth/pddl-extension/1_domain.pddl" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/docs/extensions/domains/labyrinth/pddl-extension/1_i1.pddl" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/docs/extensions/domains/labyrinth/pddl-extension/domain.pddl" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/docs/extensions/domains/labyrinth/pddl-extension/i1.pddl" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/extensions/EXTENSIONS.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/EXTENSIONS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/changes_justified.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/changes_justified.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/docs/extensions/domains/handcrafted_reader.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/handcrafted_reader.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/hanoi/handcrafted/domain.pddl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/hanoi/handcrafted/hanoi-3.pddl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/hanoiIO/handcrafted/domain.pddl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/hanoiIO/handcrafted/hanoi-3.pddl" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/labyrinth/up-format-instances/p4_5_2.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/labyrinth/up-format-instances/p4_5_2.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/pddl-extension/domain.pddl" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/pddl-extension/domain.pddl" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/pddl-extension/i0.pddl" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/pddl-extension/i1.pddl" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/pddl-extension/i1.pddl" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/pddl-extension/i2.pddl" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/pddl-extension/i2.pddl" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/pddl-extension/i3.pddl" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/pancake-sorting/pddl-extension/i3.pddl" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/unified_planning/engines/compilers/int_parameter_actions_remover.py" beforeDir="false" afterPath="$PROJECT_DIR$/unified_planning/engines/compilers/int_parameter_actions_remover.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/unified_planning/io/up_pddl_reader.py" beforeDir="false" afterPath="$PROJECT_DIR$/unified_planning/io/up_pddl_reader.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/unified_planning/model/effect.py" beforeDir="false" afterPath="$PROJECT_DIR$/unified_planning/model/effect.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -185,7 +188,7 @@
     "RunOnceActivity.git.unshallow": "true",
     "WebServerToolWindowFactoryState": "false",
     "git-widget-placeholder": "pddl-extension",
-    "last_opened_file_path": "//wsl.localhost/Ubuntu-24.04/home/isaac/unified-planning/docs/extensions/domains/pancake-sorting/pddl-extension",
+    "last_opened_file_path": "//wsl.localhost/Ubuntu-24.04/home/isaac/unified-planning/docs/extensions/domains/labyrinth/pddl-extension",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -198,11 +201,11 @@
 }]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
+      <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\labyrinth\pddl-extension" />
       <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\pancake-sorting\pddl-extension" />
       <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\15-puzzle\pddl-extension" />
       <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\hanoiIO\handcrafted" />
       <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\unified_planning\io" />
-      <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\15-puzzle\pddl-extension" />

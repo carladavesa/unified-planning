@@ -1,44 +1,6 @@
 Can you check all the changes made in the compilers and justify them? If they are not necessary or can be implemented differently without touching the compilers better. Ask for any change before
 doing it
 
-● Bash(git diff HEAD -- unified_planning/engines/compilers/arrays_remover.py unified_planning/engines/compilers/int_parameter_actions_remover.py unified_planning/engin…)
-  ⎿  (No output)
-
-● Bash(git log --oneline -5 && git stash list && git show HEAD --stat)
-  ⎿  1b1f8156 Additional test files
-     7a843a45 Sets & arrays working
-     2170cbef Array operators work: array_read, array_write and array_mk
-     … +22 lines (ctrl+o to expand)
-
-● Bash(git diff 8903598f HEAD -- unified_planning/engines/compilers/arrays_remover.py | head -400)
-  ⎿  diff --git a/unified_planning/engines/compilers/arrays_remover.py b/unified_planning/engines/compilers/arrays_remover.py
-     index 197dff95..88462108 100644
-     --- a/unified_planning/engines/compilers/arrays_remover.py
-     … +50 lines (ctrl+o to expand)
-
-● Bash(git diff 8903598f HEAD -- unified_planning/engines/compilers/int_parameter_actions_remover.py | head -300)
-  ⎿  diff --git a/unified_planning/engines/compilers/int_parameter_actions_remover.py b/unified_planning/engines/compilers/int_parameter_actions_remover.py
-     index cbf04c21..d3761285 100644
-     --- a/unified_planning/engines/compilers/int_parameter_actions_remover.py
-     … +48 lines (ctrl+o to expand)
-
-● Bash(git diff 8903598f HEAD -- unified_planning/engines/compilers/integers_remover.py | head -100)
-  ⎿  (No output)
-
-● Bash(git diff 8903598f HEAD -- unified_planning/engines/compilers/sets_remover.py | wc -l && git diff 8903598f HEAD -- unified_planning/engines/compilers/sets_remove…)
-  ⎿  204
-     diff --git a/unified_planning/engines/compilers/sets_remover.py b/unified_planning/engines/compilers/sets_remover.py
-     index 07d68ad8..5697577e 100644
-     … +38 lines (ctrl+o to expand)
-
-● Bash(git diff 8903598f HEAD -- unified_planning/engines/compilers/sets_remover.py | tail -120)
-  ⎿           set1, set2 = effect.value.args
-
-     -        # No nested expressions allowed
-     … +39 lines (ctrl+o to expand)
-
-● Now I have the full picture. Let me go through every change, file by file.
-
   ---
   arrays_remover.py — 3 changes
 
@@ -140,3 +102,228 @@ doing it
 
   All changes are either necessary to support the new features or fix pre-existing bugs in the sets_remover that were not triggered before because the full set of operators wasn't being exercised. None
    can be implemented without touching the compilers.
+
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+
+
+ unified_planning/io/up_pddl_reader.py — 3 sites
+
+  When a forall or exists variable has a bounded integer type, a RangeVariable is now created instead of a Variable:
+
+  # Before (at all 3 sites)
+  new_vars[o] = up.model.Variable(o, t)
+
+  # After
+  if t.is_int_type() and t.lower_bound is not None and t.upper_bound is not None:
+      new_vars[o] = up.model.RangeVariable(o, t.lower_bound, t.upper_bound)
+  else:
+      new_vars[o] = up.model.Variable(o, t)
+
+  Sites: precondition/goal stack machine; effect forall for instantaneous actions; effect forall for durative actions. exists is covered by the first site.
+
+  ---
+  unified_planning/model/effect.py — assertion widened
+
+  Effect.__init__ rejected any forall variable that was not a plain Variable. A RangeVariable that appears in the effect body is valid and must be yielded:
+
+  # Before
+  assert isinstance(v, up.model.variable.Variable)
+  # After
+  assert isinstance(v, (up.model.variable.Variable, up.model.range_variable.RangeVariable))
+
+  ---
+  unified_planning/engines/compilers/int_parameter_actions_remover.py — 3 fixes
+
+  1. _transform_expression — VARIABLE_EXP wrapping RangeVariable:
+  The parser always emits VariableExp(range_var) (a VARIABLE_EXP node). The old code passed all VARIABLE_EXP through unchanged. Added substitution when the payload is a RangeVariable:
+
+  if node.is_variable_exp():
+      v = node.variable()
+      if isinstance(v, RangeVariable) and v.name in int_params:
+          return Int(instantiations[int_params[v.name]])
+      return node
+
+  2. _transform_expression — added RANGE_VARIABLE_EXP handler (for completeness):
+
+  if node.is_range_variable_exp():
+      var_name = node.range_variable().name
+      if var_name in int_params:
+          return Int(instantiations[int_params[var_name]])
+      return node
+
+  3. _add_single_effect — missing is_constant() guard:
+  The conditional effects branch called value.constant_value() unconditionally, crashing when the value is a fluent expression (e.g. pancake_stack[k]):
+
+  # Before
+  if (fluent.type.is_int_type() and
+          not fluent.type.lower_bound <= value.constant_value() <= …):
+  # After
+  if (fluent.type.is_int_type() and value.is_constant() and
+          not fluent.type.lower_bound <= value.constant_value() <= …):
+
+  ---
+  docs/extensions/domains/pancake-sorting/pddl-extension/
+
+  - test_pancake.py — updated PROBLEMS range from range(4) to range(1, 5)
+
+✻ Cogitated for 3m 15s
+
+❯ Explain a bit more the changes
+
+● 1. Parser — creating RangeVariable instead of Variable
+
+  Context: PDDL allows (forall (?i - some_type) ...) in effects and preconditions. The parser builds a variable object for ?i by looking up the type. For object types this variable just labels which
+  objects to iterate over, which is handled downstream by IPAR. For bounded integer types the situation is different: the variable is a loop counter over a numeric range.
+
+  What was wrong: The parser always created up.model.Variable(o, t) regardless of whether t was an object type or a bounded integer type. IPAR has two separate expansion paths: one for Variable (object
+   quantifiers, kept as-is or handled by the classical planner) and one for RangeVariable (integer ranges, expanded by IPAR into concrete instantiations). Since ?i was a plain Variable, IPAR silently
+  skipped expansion entirely.
+
+  Why the fix works: RangeVariable stores initial and last (the integer bounds). IPAR's _extract_variables checks isinstance(var, RangeVariable) to decide whether to expand. Creating RangeVariable(o,
+  lower_bound, upper_bound) for bounded integer types means IPAR now recognises these as range variables and expands them.
+
+  The fix is applied at three sites because the effect parsing code has separate paths for instantaneous actions, durative actions, and preconditions/goals — all three independently build the variable
+  objects.
+
+  ---
+  2. effect.py — widening the assertion
+
+  Context: Effect.__init__ validates that every variable listed in forall= is actually free in the effect expression (if it weren't free it would be dead code). It does this by collecting free
+  variables from the fluent, value, and condition FNodes and then checking each forall variable against that set.
+
+  What was wrong: The validator's inner function free_vars_without_duplicates iterated over the forall tuple and, for variables that appeared free, asserted isinstance(v, Variable). This asserts that
+  only plain Variable objects can appear free in an effect — which was true before this feature, because forall was always over object types. After the parser fix, forall over an integer range produces
+   a RangeVariable, and ?i literally appears in the effect body (write ... (?i) ...), so ?i is in the free variables set. The assert fires immediately because RangeVariable is not a subclass of
+  Variable.
+
+  Why the fix works: Widening the assertion to isinstance(v, (Variable, RangeVariable)) lets RangeVariable pass the check. The structural semantics are the same: the variable appears in the expression
+  and is bound by the quantifier. The distinction between Variable and RangeVariable only matters later in IPAR when deciding how to expand it.
+
+  ---
+  3a. IPAR — _transform_expression for VARIABLE_EXP wrapping RangeVariable
+
+  Context: The expression manager has two separate node types: VARIABLE_EXP (for Variable objects) and RANGE_VARIABLE_EXP (for RangeVariable objects). The intent is that code using a range variable
+  should create a RangeVariableExp. However, the parser always creates VariableExp(var) regardless — it calls self._em.VariableExp(var[exp.value[1:]]) when it sees ?i in an expression, and var['i'] is
+  now a RangeVariable after fix 1. So the expression tree contains a VARIABLE_EXP node whose payload is a RangeVariable.
+
+  What was wrong: _transform_expression had a blanket base case:
+  if node.is_constant() or node.is_variable_exp() or node.is_timing_exp():
+      return node  # pass through unchanged
+  VARIABLE_EXP nodes for object quantifiers are supposed to pass through — they remain symbolic until classical grounding. But a VARIABLE_EXP wrapping a RangeVariable should be substituted with a
+  concrete integer (just like a ParameterExp for a bounded-int action parameter). Since all VARIABLE_EXP nodes were passed through, ?i was never substituted. When _transform_array_access then tried to
+  evaluate the index expression, it got back the original ?i node rather than an integer, found idx.is_int_constant() = False, and returned None. The None propagated up, causing the entire action to be
+   pruned.
+
+  Why the fix works: The updated code checks whether the VARIABLE_EXP payload is a RangeVariable with a name registered in int_params:
+  if node.is_variable_exp():
+      v = node.variable()
+      if isinstance(v, RangeVariable) and v.name in int_params:
+          return Int(instantiations[int_params[v.name]])
+      return node
+  int_params maps variable names to their position in the instantiation tuple. When IPAR expands the forall with i=2, it appends 2 to the instantiation tuple and registers 'i' → index. The fix
+  correctly retrieves Int(2) and the array index is now a concrete integer that _transform_array_access can use.
+
+  ---
+  3b. IPAR — RANGE_VARIABLE_EXP handler
+
+  Context: This is a companion fix for the case where a RangeVariableExp node appears directly (i.e. created via RangeVariableExp(var) rather than VariableExp(var)). This doesn't happen with the
+  current parser, but it is the "correct" node type for range variables.
+
+  What was wrong: There was no handler for RANGE_VARIABLE_EXP in _transform_expression. The node would fall through to _transform_generic, which creates a new node from its args. RANGE_VARIABLE_EXP has
+   no args (its variable is stored in the payload, not in args), so _transform_generic would get an empty arg list and return None.
+
+  Why the fix works: The new handler mirrors the VARIABLE_EXP fix: look up the variable name in int_params and substitute. This ensures that if any code path produces a proper RangeVariableExp, it is
+  handled correctly.
+
+  ---
+  3c. IPAR — is_constant() guard in _add_single_effect
+
+  Context: After an effect has been fully transformed, _add_single_effect performs an optional bounds check: if the fluent has a bounded integer type and the value is a constant outside that range, the
+   effect is either pruned (unconditional) or skipped (conditional). For example, writing Int(99) to a fluent of type integer[0, 4] is provably out of bounds and can be dropped.
+
+  What was wrong: The unconditional branch already had a proper guard:
+  if fluent.type.is_int_type() and value.is_constant():
+      if not lower <= value.constant_value() <= upper: ...
+  But the conditional branch had a bug — it called value.constant_value() without the is_constant() guard:
+  if (fluent.type.is_int_type() and
+          not fluent.type.lower_bound <= value.constant_value() <= ...):
+  For the pancake flip action, the effect value is pancake_stack[k] — the current contents of position k, a fluent expression, not a constant. Calling .constant_value() on a non-constant node hits
+  assert self.is_constant() inside FNode.constant_value().
+
+  Why the fix works: Adding value.is_constant() short-circuits before calling constant_value(). When the value is a fluent expression (not a constant), the bounds check is simply skipped and the effect
+   is added as-is — which is correct, since the value will be evaluated at runtime by the planner.
+
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+
+Given the constraints that pddl and planning languages in general have, do you think that I
+ should be able to iterate thruogh a bounded-integer-variable as I do in the pancake-sorting
+domain?
+
+● This is a good design question. The short answer is yes, with an important caveat about
+  arithmetic escaping the type bounds.
+
+  Why it is natural
+
+  A bounded integer type (number 0 4) is, semantically, just a finite ordered set of five
+  values. It is no different in principle from a user type with five named objects:
+
+  ; These are semantically equivalent for forall purposes:
+  pancakes - (number 0 4)
+  pancakes - object   (:objects n0 n1 n2 n3 n4 - pancakes)
+
+  Standard PDDL already permits forall (?x - obj_type) in effects. Since a bounded integer
+  type is just a finite type, iterating over it is a direct and justified extension. IPAR
+  already grounds integer action parameters for the same reason — the forall case is identical
+   logic applied to quantifier variables instead of action parameters.
+
+  Without this, you would need five separate actions to express a pancake flip, or macros, or
+  some other workaround that obscures the intent.
+
+  The real issue: arithmetic that escapes the bounds
+
+  The pancake domain highlights the one genuine complication. The expression (- ?f ?i) is
+  arithmetic over two bounded integers — but the result can fall outside the type bounds:
+
+  - flip_0 with ?i = 1 → index 0 - 1 = -1, which is out of bounds
+
+  This cannot happen with plain object quantification because object identity has no
+  arithmetic. The implementation handles it by silently pruning out-of-bounds array accesses
+  (returning None from _transform_array_access), and the PDDL-side guard (when (<= ?i ?f) ...)
+   makes those conditional effects inactive anyway. The two defences happen to agree.
+
+  But that silent pruning is a semantic assumption baked into the compiler, not a guarantee
+  from the type system. The type system says (- ?f ?i) has type integer — it does not
+  guarantee the result is still a valid pancakes index. A stricter type checker could
+  legitimately reject the domain.
+
+  The right mental model
+
+  The when guard is doing the real work. The correct way to read the action is:
+
+  ▎ For each position ?i in the full range: if it is within the flip prefix, write the swapped
+   value; otherwise, do nothing.
+
+  This is idiomatic PDDL — the when restricts which iterations have effects. The fact that (-
+  ?f ?i) is only evaluated on the true branch (where ?i <= ?f guarantees ?f - ?i >= 0) is what
+   makes the domain semantically sound. IPAR's silent pruning is just a consequence of that
+  guard already having eliminated the problematic cases.
+
+  Verdict
+
+  Yes, you should be able to do this. It is:
+  - Semantically justified — bounded integers are finite types, forall over them is natural
+  - Practically necessary — no reasonable PDDL alternative exists for expressing a
+  simultaneous prefix reversal
+  - Correct — the when guard ensures arithmetic only produces valid indices on the branches
+  where it matters
+
+  The one thing worth documenting is that arithmetic expressions over bounded integer range
+  variables are not bounds-checked by the type system — the planner/compiler relies on when
+  guards to keep them valid. This is a reasonable responsibility to place on the domain
+  author, the same way standard PDDL places the responsibility of writing correct
+  preconditions on the author.
+

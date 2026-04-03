@@ -3,6 +3,7 @@
     (:requirements :typing :arrays :bounded-integers)
 
     (:types
+        jo tu ell - object
         pancakes - (number 0 4)
         stack    - (array 5 pancakes)
     )

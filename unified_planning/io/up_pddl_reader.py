@@ -2122,7 +2122,15 @@ class UPPDDLReader:
                                     return []
                                 if isinstance(group[0].value, ParseResults):
                                     return [_parse_array_mk(group[k]) for k in range(len(group))]
-                                return [int(group[k].value) for k in range(len(group))]
+                                # Fill array with declared objects
+                                result = []
+                                for k in range(len(group)):
+                                    token = group[k].value
+                                    if isinstance(token, str) and problem.has_object(token):
+                                        result.append(problem.object(token))
+                                    else:
+                                        result.append(int(token))
+                                return result
                             if len(rhs) == 2:
                                 # 1D: single content group
                                 value = _parse_array_mk(rhs[1])

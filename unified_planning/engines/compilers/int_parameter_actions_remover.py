@@ -555,6 +555,7 @@ class IntParameterActionsRemover(engines.engine.Engine, CompilerMixin):
         if node.is_constant() or node.is_timing_exp():
             return node
 
+        # If experssion wraps a RangeVariable, substitute with integer
         if node.is_variable_exp():
             v = node.variable()
             if isinstance(v, RangeVariable) and v.name in int_params:
