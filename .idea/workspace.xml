@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="7c60bccf-105d-46ba-a2c0-79b47893c82f" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/unified_planning/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/unified_planning/__init__.py" afterDir="false" />
+    <list default="true" id="7c60bccf-105d-46ba-a2c0-79b47893c82f" name="Changes" comment="Canvis + implementació labyrinth">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/handcrafted_reader.py" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/handcrafted_reader.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/extensions/domains/labyrinth/up-format-instances/p4_5_2.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docs/extensions/domains/labyrinth/up-format-instances/p4_5_2.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/unified_planning/io/up_pddl_reader.py" beforeDir="false" afterPath="$PROJECT_DIR$/unified_planning/io/up_pddl_reader.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -45,11 +48,12 @@
     </favorite-branches>
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
-        <entry key="$PROJECT_DIR$" value="new_types2" />
+        <entry key="$PROJECT_DIR$" value="master" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
     <option name="ROOT_SYNC" value="DONT_SYNC" />
+    <option name="SWAP_SIDES_IN_COMPARE_BRANCHES" value="true" />
   </component>
   <component name="GitHubPullRequestSearchHistory">{
   &quot;lastFilter&quot;: {
@@ -64,14 +68,12 @@
       </list>
     </option>
   </component>
-  <component name="GithubPullRequestsUISettings">
-    <option name="selectedUrlAndAccountId">
-      <UrlAndAccount>
-        <option name="accountId" value="ff7492c6-2dc8-485e-94a2-b1ebb305286a" />
-        <option name="url" value="https://github.com/stacs-cp/unified-planning.git" />
-      </UrlAndAccount>
-    </option>
-  </component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/iochoa808/unified-planning.git&quot;,
+    &quot;accountId&quot;: &quot;7e0f07d9-c015-4731-bece-a3d1a8d92305&quot;
+  }
+}</component>
   <component name="HighlightingSettingsPerFile">
     <setting file="file:///Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/typing.py" root0="FORCE_HIGHLIGHTING" />
     <setting file="file://$USER_HOME$/Library/Caches/JetBrains/PyCharm2023.2/python_stubs/1043479131/builtins.py" root0="FORCE_HIGHLIGHTING" />
@@ -92,6 +94,9 @@
   &quot;associatedIndex&quot;: 8
 }</component>
   <component name="ProjectId" id="2YU5AraaukCMBQHOf5hit0YGmq2" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
@@ -169,10 +174,11 @@
     &quot;Python.usertype_fluents_remover.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/Users/cds26/PycharmProjects/unified-planning/experiments/folding&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;pddl-extension&quot;,
+    &quot;last_opened_file_path&quot;: &quot;//wsl.localhost/Ubuntu-24.04/home/isaac/unified-planning/docs/extensions/domains/labyrinth/pddl-extension&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -185,18 +191,18 @@
 }</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
-      <recent name="$PROJECT_DIR$/experiments/folding" />
-      <recent name="$PROJECT_DIR$/experiments" />
-      <recent name="$PROJECT_DIR$/experiments/kight-tour" />
-      <recent name="$PROJECT_DIR$/experiments/15-puzzle" />
-      <recent name="$PROJECT_DIR$/experiments/puzznic" />
+      <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\labyrinth\pddl-extension" />
+      <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\pancake-sorting\pddl-extension" />
+      <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\15-puzzle\pddl-extension" />
+      <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\hanoiIO\handcrafted" />
+      <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\unified_planning\io" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\15-puzzle\pddl-extension" />
+      <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\hanoi\handcrafted" />
+      <recent name="\\wsl.localhost\Ubuntu-24.04\home\isaac\unified-planning\docs\extensions\domains\hanoi" />
       <recent name="$PROJECT_DIR$/experiments/folding" />
       <recent name="$PROJECT_DIR$/experiments/puzznic/instances" />
-      <recent name="$PROJECT_DIR$/pytamer" />
-      <recent name="$PROJECT_DIR$/experiments/test" />
-      <recent name="$PROJECT_DIR$/experiments/test/levels" />
     </key>
   </component>
   <component name="RunManager" selected="Python.Puzznic">
@@ -214,7 +220,6 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="RUN_TOOL" value="" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/experiments/puzznic/Puzznic.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
@@ -238,7 +243,6 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="RUN_TOOL" value="" />
       <option name="SCRIPT_NAME" value="experiments/&lt;Domain&gt;/&lt;Domain&gt;.py" />
       <option name="PARAMETERS" value="--compilation &lt;Compilation&gt; --solving &lt;Solving&gt;" />
       <option name="SHOW_COMMAND_LINE" value="false" />
@@ -256,6 +260,8 @@
       <list>
         <item itemvalue="Python.python experiments/&lt;Domain&gt;/&lt;Domain&gt;.py --compilation &lt;Compilation&gt; --solving &lt;Solving&gt;" />
         <item itemvalue="Python.Puzznic" />
+        <item itemvalue="Python.python experiments/&lt;Domain&gt;/&lt;Domain&gt;.py --compilation &lt;Compilation&gt; --solving &lt;Solving&gt;" />
+        <item itemvalue="Python.Puzznic" />
         <item itemvalue="Python.Puzznic" />
       </list>
     </recent_temporary>
@@ -263,8 +269,8 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-9b0f141eb926-JavaScript-PY-253.31033.139" />
-        <option value="bundled-python-sdk-2653e85de345-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.31033.139" />
+        <option value="bundled-js-predefined-d6986cc7102b-3aa1da707db6-JavaScript-PY-252.26830.99" />
+        <option value="bundled-python-sdk-164cda30dcd9-0af03a5fa574-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-252.26830.99" />
       </set>
     </attachedChunks>
   </component>
@@ -450,7 +456,59 @@
       <workItem from="1752659726553" duration="62000" />
       <workItem from="1752663445712" duration="1800000" />
       <workItem from="1773672323654" duration="870000" />
+      <workItem from="1774347058052" duration="61907000" />
+      <workItem from="1774902734387" duration="612000" />
+      <workItem from="1774903373053" duration="20597000" />
     </task>
+    <task id="LOCAL-00001" summary="Commit hanoi">
+      <option name="closed" value="true" />
+      <created>1774368044078</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1774368044078</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Parser casi funciona amb arrays">
+      <option name="closed" value="true" />
+      <created>1774904609896</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1774904609896</updated>
+    </task>
+    <task id="LOCAL-00003" summary="Array operators work: array_read, array_write and array_mk">
+      <option name="closed" value="true" />
+      <created>1774955332535</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1774955332535</updated>
+    </task>
+    <task id="LOCAL-00004" summary="Changes to hanoi and changes justified.">
+      <option name="closed" value="true" />
+      <created>1775082356614</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1775082356614</updated>
+    </task>
+    <task id="LOCAL-00005" summary="New problems and instances">
+      <option name="closed" value="true" />
+      <created>1775136351978</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1775136351978</updated>
+    </task>
+    <task id="LOCAL-00006" summary="Canvis + implementació labyrinth">
+      <option name="closed" value="true" />
+      <created>1775219707399</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1775219707399</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -500,6 +558,15 @@
         </entry>
       </map>
     </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Commit hanoi" />
+    <MESSAGE value="Parser casi funciona amb arrays" />
+    <MESSAGE value="Array operators work: array_read, array_write and array_mk" />
+    <MESSAGE value="Changes to hanoi and changes justified." />
+    <MESSAGE value="New problems and instances" />
+    <MESSAGE value="Canvis + implementació labyrinth" />
+    <option name="LAST_COMMIT_MESSAGE" value="Canvis + implementació labyrinth" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/unified_planning$arrays_and_integers_remover.coverage" NAME="arrays_and_integers_remover Coverage Results" MODIFIED="1727965353909" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/unified_planning/engines/compilers" />

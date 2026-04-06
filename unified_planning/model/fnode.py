@@ -65,6 +65,8 @@ class FNode(object):
             OperatorKind.INT_CONSTANT: lambda: str(self._content.payload),
             OperatorKind.REAL_CONSTANT: lambda: str(self._content.payload),
             OperatorKind.ARRAY_CONSTANT: lambda: str(list(self._content.payload)),
+            OperatorKind.ARRAY_READ: lambda: f"(read {self.arg(0)} {self.arg(1)})",
+            OperatorKind.ARRAY_WRITE: lambda: f"(write {self.arg(0)} {self.arg(1)})",
             OperatorKind.SET_CONSTANT: lambda: str(set(self._content.payload)),
             OperatorKind.FLUENT_EXP: lambda: (
                 self._content.payload.name
@@ -310,6 +312,12 @@ class FNode(object):
     def is_array_constant(self) -> bool:
         """Test whether the expression is a `real` constant."""
         return self.node_type == OperatorKind.ARRAY_CONSTANT
+
+    def is_array_read(self) -> bool:
+        return self.node_type == OperatorKind.ARRAY_READ
+
+    def is_array_write(self) -> bool:
+        return self.node_type == OperatorKind.ARRAY_WRITE
 
     def is_set_constant(self) -> bool:
         """Test whether the expression is a `real` constant."""
