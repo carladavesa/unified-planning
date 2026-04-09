@@ -322,7 +322,6 @@ def compile_and_solve(
 
     try:
         compiled_problem, comp_results, comp_time = compile_problem(problem, compilation, timeout)
-        print(compiled_problem)
         remaining_timeout = 0 if timeout == 0 else max(1, timeout - int(comp_time))
         solve_time = solve_problem(
             compiled_problem,
