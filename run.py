@@ -51,15 +51,15 @@ COMPILATION_PIPELINES = {
         CompilationKind.ARRAYS_REMOVING,
     ],
     "uti": [
-        #CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
-        #CompilationKind.ARRAYS_REMOVING,
+        CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
+        CompilationKind.ARRAYS_REMOVING,
         CompilationKind.GROUNDING,
         CompilationKind.INTEGERS_REMOVING,
         CompilationKind.USERTYPE_FLUENTS_REMOVING,
     ],
     "log": [
-        #CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
-        #CompilationKind.ARRAYS_REMOVING,
+        CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
+        CompilationKind.ARRAYS_REMOVING,
         CompilationKind.GROUNDING,
         CompilationKind.LOGARITHMIC_REMOVING,
         #CompilationKind.USERTYPE_FLUENTS_REMOVING,
@@ -332,14 +332,6 @@ def compile_and_solve(
             timeout=remaining_timeout,
             planner_params=planner_params,
         )
-
-        total_time = time.time() - total_start
-        print(f"\n{'=' * 60}")
-        print("Summary:")
-        print(f"  Compilation: {comp_time:.2f}s")
-        print(f"  Solving:     {solve_time:.2f}s")
-        print(f"  Total:       {total_time:.2f}s")
-        print(f"{'=' * 60}\n")
 
     except TimeoutException:
         print(f"\nOverall timeout ({timeout}s)")
