@@ -110,13 +110,13 @@ class WateringDomain(Domain):
         min_x_val = numeric_global.get('minx', 0)
         max_y_val = numeric_global.get('maxy', 0)
         min_y_val = numeric_global.get('miny', 0)
-        water_reserve_val = numeric_global.get('water_reserve', 0)
+        water_reserve_val = numeric_global.get('waterreserve', 0)
 
-        max_carry_vals = {obj: v for (f, obj), v in numeric_obj.items() if f == 'max_carry'}
-        carrying_vals  = {obj: v for (f, obj), v in numeric_obj.items() if f == 'carrying'}
-        poured_vals    = {obj: v for (f, obj), v in numeric_obj.items() if f == 'poured'}
-        x_vals         = {obj: v for (f, obj), v in numeric_obj.items() if f == 'x'}
-        y_vals         = {obj: v for (f, obj), v in numeric_obj.items() if f == 'y'}
+        max_carry_vals = {obj: v for (f, obj), v in numeric_obj.items() if f == 'maxcarry'}
+        carrying_vals = {obj: v for (f, obj), v in numeric_obj.items() if f == 'carrying'}
+        poured_vals = {obj: v for (f, obj), v in numeric_obj.items() if f == 'poured'}
+        x_vals = {obj: v for (f, obj), v in numeric_obj.items() if f == 'x'}
+        y_vals = {obj: v for (f, obj), v in numeric_obj.items() if f == 'y'}
 
         max_carry_val = max(max_carry_vals.values()) if max_carry_vals else 1
 
