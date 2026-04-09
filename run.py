@@ -317,6 +317,8 @@ def compile_and_solve(
     get_environment().credits_stream = None  # suppress UP credits banner
 
     total_start = time.time()
+    comp_time = 0
+    solve_time = 0
 
     try:
         compiled_problem, comp_results, comp_time = compile_problem(problem, compilation, timeout)
@@ -343,6 +345,15 @@ def compile_and_solve(
         print(f"\nOverall timeout ({timeout}s)")
     except Exception:
         raise
+
+    finally:
+        total_time = time.time() - total_start
+        print(f"\n{'=' * 60}")
+        print("Summary:")
+        print(f"  Compilation: {comp_time:.2f}s")
+        print(f"  Solving:     {solve_time:.2f}s")
+        print(f"  Total:       {total_time:.2f}s")
+        print(f"{'=' * 60}\n")
 
 
 
