@@ -88,17 +88,27 @@ class DeliveryDomain(Domain):
         load_limits = {a[0]: v for (f, a), v in numeric.items() if f == 'load_limit'}
         current_loads = {a[0]: v for (f, a), v in numeric.items() if f == 'current_load'}
 
-        # Goal
-        goal_match = re.search(r'\(:goal\s*\(and(.*?)\)\s*\)', content, re.IGNORECASE | re.DOTALL)
-        if not goal_match:
-            goal_match = re.search(r'\(:goal\s*(.*?)\)\s*\(:metric', content, re.IGNORECASE | re.DOTALL)
+        # Goal - troba el bloc (and ...) complet
+        goal_start = content.find('(:goal')
         goals_at = []
-        if goal_match:
-            for m in re.finditer(r'\((\w[\w-]*)((?:\s+\w+)*)\)', goal_match.group(1)):
-                pred = m.group(1).replace('-', '_')
-                args = m.group(2).strip().split()
-                if pred == 'at' and len(args) == 2:
-                    goals_at.append((args[0], args[1]))
+        if goal_start != -1:
+            # Troba el contingut dins (and ...)
+            and_start = content.find('(and', goal_start)
+            if and_start != -1:
+                # Extreu tot fins al final del bloc (and) comptant parèntesis
+                depth = 0
+                i = and_start
+                while i < len(content):
+                    if content[i] == '(':
+                        depth += 1
+                    elif content[i] == ')':
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    i += 1
+                goal_str = content[and_start:i + 1]
+                for m in re.finditer(r'\(at\s+(\w+)\s+(\w+)\)', goal_str):
+                    goals_at.append((m.group(1), m.group(2)))
 
         return {
             'objects': objects,
@@ -260,6 +270,7 @@ class DeliveryDomain(Domain):
         problem.add_actions([move, pick, drop, to_tray, from_tray])
 
         # --- Goal ---
+        print("goals_at", goals_at)
         for item, room in goals_at:
             problem.add_goal(at(obj(item), obj(room)))
 
