@@ -282,16 +282,19 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
         return None
 
-    def _create_multiple_actions(self, old_action, problem, new_problem, params, solutions, variables):
-        new_actions = []
+    def _create_multiple_actions(self, old_action, problem, new_problem, params, solutions, variables,
+                                 dependent_effects=None, independent_effects=None):
+        dependent_effects = dependent_effects if dependent_effects is not None else old_action.effects
+        independent_effects = independent_effects or []
 
+        new_actions = []
         prec_fluent_strs = set()
         for prec in old_action.preconditions:
             for f in get_fluent_exps_in_expression(prec):
                 prec_fluent_strs.add(str(f))
 
         modified_fluent_strs = {
-            str(effect.fluent) for effect in old_action.effects
+            str(effect.fluent) for effect in dependent_effects
             if str(effect.fluent) not in prec_fluent_strs
                and not effect.is_increase() and not effect.is_decrease()
                and effect.condition.is_true()
@@ -301,6 +304,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             action_name = f"{old_action.name}_d{idx}"
             new_action = InstantaneousAction(action_name, _parameters=params, _env=problem.environment)
 
+            # Precondicions de la solució
             and_clauses = []
             for fnode, var in variables.items():
                 var_str = str(fnode)
@@ -314,7 +318,31 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             if and_clauses:
                 new_action.add_precondition(And(and_clauses) if len(and_clauses) > 1 else and_clauses[0])
 
-            self._add_effects_for_solution(new_action, problem, new_problem, solution, old_action.effects)
+            # Efectes dependents: fixats per la solució
+            self._add_effects_for_solution(new_action, problem, new_problem, solution, dependent_effects)
+
+            # Efectes independents: iguals a totes les accions
+            for effect in independent_effects:
+                if effect.is_increase() or effect.is_decrease():
+                    for new_eff in self._transform_increase_decrease_effect(effect, new_problem):
+                        new_action.add_effect(new_eff.fluent, new_eff.value, new_eff.condition, new_eff.forall)
+                elif requires_arithmetic(effect.condition):
+                    new_fluent = self._transform_node(problem, new_problem, effect.fluent)
+                    new_value = self._transform_node(problem, new_problem, effect.value)
+                    if not new_fluent or not new_value:
+                        continue
+                    expansions = self._expand_condition_with_cp(
+                        problem, new_problem, effect.condition, solution
+                    )
+                    for _, cond in expansions:
+                        new_action.add_effect(new_fluent, new_value, cond, effect.forall)
+                else:
+                    new_fluent = self._transform_node(problem, new_problem, effect.fluent)
+                    new_value = self._transform_node(problem, new_problem, effect.value)
+                    new_cond = self._transform_node(problem, new_problem, effect.condition) or TRUE()
+                    if new_fluent and new_value:
+                        new_action.add_effect(new_fluent, new_value, new_cond, effect.forall)
+
             new_actions.append(new_action)
 
         return new_actions
@@ -425,7 +453,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             for effect in old_action.effects
         )
 
-        # No arithmetic: direct transformation
+        # Cas 1: cap aritmètica → transformació directa
         if not has_arithmetic_preconditions and not has_arithmetic_effects:
             new_action = InstantaneousAction(old_action.name, _parameters=params, _env=problem.environment)
             for old_precondition in old_action.preconditions:
@@ -442,7 +470,36 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                     new_action.add_effect(new_fluent, new_value, new_cond, old_effect.forall)
             return [new_action]
 
-        # Arithmetic: CP-SAT
+        # Classificar efectes: dependents (relacionats amb prec_vars) vs independents
+        prec_vars = set()
+        for prec in old_action.preconditions:
+            for f in get_fluent_exps_in_expression(prec):
+                prec_vars.add(str(f))
+
+        dependent_effects = []
+        independent_effects = []
+
+        for effect in old_action.effects:
+            if effect.is_increase() or effect.is_decrease():
+                effect_vars = get_fluent_exps_in_expression(effect.fluent)
+                value_vars = get_fluent_exps_in_expression(effect.value)
+                all_vars = effect_vars | value_vars
+                if any(str(v) in prec_vars for v in all_vars):
+                    dependent_effects.append(effect)
+                else:
+                    independent_effects.append(effect)
+            elif requires_arithmetic(effect.value):
+                value_vars = get_fluent_exps_in_expression(effect.value)
+                if any(str(v) in prec_vars for v in value_vars):
+                    dependent_effects.append(effect)
+                else:
+                    independent_effects.append(effect)
+            else:
+                # Efectes booleans/assignació simple i condicions aritmètiques → independents
+                # Les condicions MAI van al CP-SAT principal
+                independent_effects.append(effect)
+
+        # Cas 2: CP-SAT NOMÉS per precondicions + efectes dependents
         self._object_to_index = {}
         self._index_to_object = {}
         variables = bidict({})
@@ -458,13 +515,18 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                     prec_var = add_cp_constraints(problem, prec, variables, cp_model_obj, self._object_to_index)
                     cp_model_obj.Add(prec_var == 1)
 
-        add_effect_bounds_constraints(problem, variables, cp_model_obj, old_action.effects, self._object_to_index, False)
+        add_effect_bounds_constraints(problem, variables, cp_model_obj, dependent_effects, self._object_to_index, False)
+
         solutions = solve_with_cp_sat(variables, cp_model_obj)
         if not solutions:
             return []
 
         self._index_to_object = {(t, idx): obj for (t, obj), idx in self._object_to_index.items()}
-        return self._create_multiple_actions(old_action, problem, new_problem, params, solutions, variables)
+        return self._create_multiple_actions(
+            old_action, problem, new_problem, params, solutions, variables,
+            dependent_effects=dependent_effects,
+            independent_effects=independent_effects
+        )
 
     def _transform_actions(self, problem: Problem, new_problem: Problem) -> Dict[Action, Action]:
         """Transform all actions by grounding integer parameters into objects."""
