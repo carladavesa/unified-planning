@@ -28,6 +28,7 @@ from .delivery import DOMAIN as delivery
 from .labyrinth import DOMAIN as labyrinth
 from .n_puzzle import DOMAIN as n_puzzle
 from .pancake_sorting import DOMAIN as pancake_sorting
+from .pathways import DOMAIN as pathways
 from .plotting import DOMAIN as plotting
 from .puzznic import DOMAIN as puzznic
 from .rush_hour import DOMAIN as rush_hour
@@ -43,6 +44,7 @@ DOMAINS: dict[str, Domain] = {
     "labyrinth": labyrinth,
     "n_puzzle": n_puzzle,
     "pancake_sorting": pancake_sorting,
+    "pathways": pathways,
     "plotting": plotting,
     "puzznic": puzznic,
     "rush_hour": rush_hour,
