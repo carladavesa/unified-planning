@@ -106,23 +106,23 @@ class SettlersDomain(Domain):
         vehicles = parsed['vehicles']
         pd = parsed['data']
 
+        # Calculate bounds
         n_places = len(places)
         n_vehicles = len(vehicles)
-
-        max_initial_available = max(pd.get('resources', {}).values(), default=0)
-        available_ub = max(max_initial_available + 20, 20)
-
-        max_initial_space = max(pd.get('space_in', {}).values(), default=0)
-        space_ub = max(max_initial_space + 10, 10)
+        n_actions_estimate = (n_places + n_vehicles) * 20
 
         max_housing_goal = 0
         for goal_str in pd.get('goals', []):
             m = re.match(r'^\(>=\s+\(housing\s+\w+\)\s+(\d+)\)$', goal_str)
             if m:
                 max_housing_goal = max(max_housing_goal, int(m.group(1)))
-        housing_ub = max(max_housing_goal + 5, 10)
 
-        global_ub = (n_places + n_vehicles) * 100
+        available_ub = n_places * 5 + 5
+        space_ub = 10
+        housing_ub = max(max_housing_goal + 2, 5)
+        labour_ub = n_actions_estimate
+        pollution_ub = n_actions_estimate // 2
+        resource_use_ub = n_actions_estimate // 3
 
         problem = Problem('settlers_problem')
 
@@ -151,9 +151,9 @@ class SettlersDomain(Domain):
         available_v = Fluent('available_v', IntType(0, available_ub), r=Resource, v=Vehicle)
         space_in = Fluent('space_in', IntType(0, space_ub), v=Vehicle)
         housing = Fluent('housing', IntType(0, housing_ub), p=Place)
-        labour = Fluent('labour', IntType(0, global_ub))
-        pollution = Fluent('pollution', IntType(0, global_ub))
-        resource_use = Fluent('resource_use', IntType(0, global_ub))
+        labour = Fluent('labour', IntType(0, labour_ub))
+        pollution = Fluent('pollution', IntType(0, pollution_ub))
+        resource_use = Fluent('resource_use', IntType(0, resource_use_ub))
 
         woodland = Fluent('woodland', BoolType(), p=Place)
         mountain = Fluent('mountain', BoolType(), p=Place)
