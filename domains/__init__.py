@@ -25,6 +25,7 @@ from .base import Domain
 from .block_grouping import DOMAIN as block_grouping
 from .counters import DOMAIN as counters
 from .delivery import DOMAIN as delivery
+from .farmland import DOMAIN as farmland
 from .labyrinth import DOMAIN as labyrinth
 from .mystery_prime import DOMAIN as mystery_prime
 from .n_puzzle import DOMAIN as n_puzzle
@@ -43,6 +44,7 @@ DOMAINS: dict[str, Domain] = {
     "block_grouping": block_grouping,
     "counters": counters,
     "delivery": delivery,
+    "farmland": farmland,
     "labyrinth": labyrinth,
     "mystery_prime": mystery_prime,
     "n_puzzle": n_puzzle,
