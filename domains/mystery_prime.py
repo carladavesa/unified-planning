@@ -60,13 +60,40 @@ class MysteryPrimeDomain(Domain):
         with open(filepath, 'r') as f:
             content = f.read()
 
+        # Foods from drink actions (més complet que functions)
+        food_names = []
+        for match in re.finditer(r':action drink__(\w+)__\w+', content):
+            name = match.group(1)
+            if name not in food_names:
+                food_names.append(name)
+
+        # Persons from overcome/succumb actions
+        person_names = []
+        for match in re.finditer(r':action overcome__(\w+)__(\w+)__\w+', content):
+            for name in [match.group(1), match.group(2)]:
+                if name not in person_names:
+                    person_names.append(name)
+        for match in re.finditer(r':action succumb__(\w+)__(\w+)__\w+', content):
+            for name in [match.group(1), match.group(2)]:
+                if name not in person_names:
+                    person_names.append(name)
+        # Also from feast
+        for match in re.finditer(r':action feast__(\w+)__\w+__\w+', content):
+            name = match.group(1)
+            if name not in person_names and name not in food_names:
+                person_names.append(name)
+
         drink_combos = []
         for match in re.finditer(r':action drink__(\w+)__(\w+)', content):
-            drink_combos.append((match.group(1), match.group(2)))
+            f1, f2 = match.group(1), match.group(2)
+            if f1 != f2:
+                drink_combos.append((f1, f2))
 
         feast_combos = []
         for match in re.finditer(r':action feast__(\w+)__(\w+)__(\w+)', content):
-            feast_combos.append((match.group(1), match.group(2), match.group(3)))
+            p, f1, f2 = match.group(1), match.group(2), match.group(3)
+            if f1 != f2:
+                feast_combos.append((p, f1, f2))
 
         overcome_combos = []
         for match in re.finditer(r':action overcome__(\w+)__(\w+)__(\w+)', content):
@@ -77,6 +104,8 @@ class MysteryPrimeDomain(Domain):
             succumb_combos.append((match.group(1), match.group(2), match.group(3)))
 
         return {
+            'food_names': food_names,
+            'person_names': person_names,
             'drink': drink_combos,
             'feast': feast_combos,
             'overcome': overcome_combos,
@@ -96,13 +125,14 @@ class MysteryPrimeDomain(Domain):
     def build_problem(self, instance: str | None = None) -> "Problem":
         data = self.get_instance(instance)
         domain_data = self.get_domain(instance)
+
         problem = Problem("mprime_problem")
 
         Food = UserType('Food')
         Person = UserType('Person')
 
-        food_names = ['wurst', 'tuna', 'chicken', 'pistachio']
-        person_names = ['depression', 'angina', 'expectation', 'rest']
+        food_names = domain_data['food_names']
+        person_names = domain_data['person_names']
 
         foods = [Object(name, Food) for name in food_names]
         persons = [Object(name, Person) for name in person_names]
