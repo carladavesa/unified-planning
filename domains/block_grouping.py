@@ -61,10 +61,10 @@ class BlockGroupingDomain(Domain):
             if fluent in ('x', 'y') and arg:
                 xy.setdefault(arg, {})[fluent] = val
 
-        maxx = numeric.get('maxx', None)
-        minx = numeric.get('minx', None)
-        maxy = numeric.get('maxy', None)
-        miny = numeric.get('miny', None)
+        maxx = numeric.get(('maxx', None), 20)
+        minx = numeric.get(('minx', None), 1)
+        maxy = numeric.get(('maxy', None), 20)
+        miny = numeric.get(('miny', None), 1)
 
         # Goals - parse raw goal string
         goal_match = re.search(r'\(:goal\s*\(and(.*)\)\s*\)', content, re.IGNORECASE | re.DOTALL)
@@ -104,7 +104,7 @@ class BlockGroupingDomain(Domain):
 
     def build_problem(self, instance: str | None = None) -> "Problem":
         data = self.get_instance(instance)
-        print(data)
+
         blocks = data['blocks']
         xy = data['xy']
         maxx, minx = data['maxx'], data['minx']
