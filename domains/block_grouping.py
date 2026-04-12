@@ -50,7 +50,7 @@ class BlockGroupingDomain(Domain):
         init_str = init_match.group(1).strip() if init_match else ""
 
         numeric = {}
-        for m in re.finditer(r'\(=\s*\((\w+)(?:\s+(\w+))?\)\s+([\d.]+)\)', init_str):
+        for m in re.finditer(r'\(=\s*\((\w+)(?:\s+(\w+))?\)\s+([\d.]+)\s*\)', init_str):
             fluent = m.group(1)
             arg = m.group(2)  # None if no argument (maxx, minx, etc.)
             value = int(m.group(3))
@@ -61,10 +61,10 @@ class BlockGroupingDomain(Domain):
             if fluent in ('x', 'y') and arg:
                 xy.setdefault(arg, {})[fluent] = val
 
-        maxx = numeric.get(('maxx', None), 20)
-        minx = numeric.get(('minx', None), 1)
-        maxy = numeric.get(('maxy', None), 20)
-        miny = numeric.get(('miny', None), 1)
+        maxx = numeric.get('maxx', None)
+        minx = numeric.get('minx', None)
+        maxy = numeric.get('maxy', None)
+        miny = numeric.get('miny', None)
 
         # Goals - parse raw goal string
         goal_match = re.search(r'\(:goal\s*\(and(.*)\)\s*\)', content, re.IGNORECASE | re.DOTALL)
@@ -104,6 +104,7 @@ class BlockGroupingDomain(Domain):
 
     def build_problem(self, instance: str | None = None) -> "Problem":
         data = self.get_instance(instance)
+        print(data)
         blocks = data['blocks']
         xy = data['xy']
         maxx, minx = data['maxx'], data['minx']
@@ -126,8 +127,12 @@ class BlockGroupingDomain(Domain):
 
         # Init
         for b in blocks:
-            problem.set_initial_value(x(obj(b)), xy[b]['x'])
-            problem.set_initial_value(y(obj(b)), xy[b]['y'])
+            if b not in xy:
+                raise ValueError(f"Block {b} has no initial position!")
+            if 'x' not in xy[b] or 'y' not in xy[b]:
+                raise ValueError(f"Block {b} missing x or y: {xy[b]}")
+            problem.set_initial_value(x(obj(b)), Int(xy[b]['x']))
+            problem.set_initial_value(y(obj(b)), Int(xy[b]['y']))
 
         # Actions
         move_up = InstantaneousAction('move_up', b=Block)
@@ -165,7 +170,7 @@ class BlockGroupingDomain(Domain):
             move_right: Int(1), move_left: Int(1),
         }
         problem.add_quality_metric(MinimizeActionCosts(costs))
-
+        print(problem)
         return problem
 
 
