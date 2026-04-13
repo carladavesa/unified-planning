@@ -3,11 +3,12 @@
 Parser for Settlers PDDL instances.
 Extracts the problem structure from PDDL files.
 """
-
+import os
 import sys
 import re
-from pathlib import Path
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Tuple
+
+PDDL_DIR = os.path.join(os.path.dirname(__file__), 'handcrafted')
 
 
 def parse_init_facts(init_block: str) -> Dict:
@@ -302,7 +303,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     instance_name = sys.argv[1]
-    filepath = f'/Users/cds26/PycharmProjects/BitBlast/benchmark/Settlers/instances/{instance_name}.pddl'
+    filepath = os.path.join(PDDL_DIR, f"{instance_name}.pddl")
 
     try:
         data = parse_pddl_file(filepath)
