@@ -70,21 +70,31 @@ class BlockGroupingDomain(Domain):
         goal_match = re.search(r'\(:goal\s*\(and(.*)\)\s*\)', content, re.IGNORECASE | re.DOTALL)
         goal_str = goal_match.group(1).strip() if goal_match else ""
 
-        # Equal pairs: (= (x bi) (x bj)) and (= (y bi) (y bj))
+        # Not-equals
+        not_equal = []
+        for m in re.finditer(
+                r'\(or\s*\(not\s*\(=\s*\(x\s+(\w+)\)\s*\(x\s+(\w+)\)\)\)\s*\(not\s*\(=\s*\(y\s+(\w+)\)\s*\(y\s+(\w+)\)\)\)\)',
+                goal_str
+        ):
+            not_equal.append((m.group(1), m.group(2)))
+
+        # Equals
         equal_x = []
         equal_y = []
         for m in re.finditer(r'\(=\s*\(x\s+(\w+)\)\s*\(x\s+(\w+)\)\)', goal_str):
-            equal_x.append((m.group(1), m.group(2)))
-        for m in re.finditer(r'\(=\s*\(y\s+(\w+)\)\s*\(y\s+(\w+)\)\)', goal_str):
-            equal_y.append((m.group(1), m.group(2)))
+            b1, b2 = m.group(1), m.group(2)
+            # Comprova que no estigui precedit per (not
+            start = m.start()
+            preceding = goal_str[max(0, start - 10):start]
+            if 'not' not in preceding:
+                equal_x.append((b1, b2))
 
-        # Not-equal pairs: (or (not (= (x bi) (x bj))) (not (= (y bi) (y bj))))
-        not_equal = []
-        for m in re.finditer(
-            r'\(or\s*\(not\s*\(=\s*\(x\s+(\w+)\)\s*\(x\s+(\w+)\)\)\)\s*\(not\s*\(=\s*\(y\s+(\w+)\)\s*\(y\s+(\w+)\)\)\)\)',
-            goal_str
-        ):
-            not_equal.append((m.group(1), m.group(2)))
+        for m in re.finditer(r'\(=\s*\(y\s+(\w+)\)\s*\(y\s+(\w+)\)\)', goal_str):
+            b1, b2 = m.group(1), m.group(2)
+            start = m.start()
+            preceding = goal_str[max(0, start - 10):start]
+            if 'not' not in preceding:
+                equal_y.append((b1, b2))
 
         return {
             'blocks': blocks,
