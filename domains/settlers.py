@@ -17,8 +17,8 @@ from unified_planning.shortcuts import (
 )
 from domains.base import Domain
 
-PDDL_DIR = os.path.join('domains/settlers', 'handcrafted')
-READ_INSTANCE_SCRIPT = os.path.join('domains/settlers', 'read_instance.py')
+PDDL_DIR = os.path.join(os.path.dirname(__file__), 'domains/settlers', 'handcrafted')
+READ_INSTANCE_SCRIPT = os.path.join(os.path.dirname(__file__), 'domains/settlers', 'read_instance.py')
 
 INSTANCES: list[str] = [f"pfile{i}" for i in range(1, 21)]
 
