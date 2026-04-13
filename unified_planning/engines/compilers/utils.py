@@ -796,13 +796,25 @@ def add_cp_constraints(
         args = [add_cp_constraints(problem, a, variables, model, object_to_index) for a in node.args]
         result = args[0]
         for arg in args[1:]:
-            if isinstance(arg, int):
-                # constant * IntVar → LinearExpr
+            if isinstance(result, int) and isinstance(arg, int):
+                result = result * arg
+            elif isinstance(result, int):
+                # int * IntVar → IntVar * int
+                result = arg * result
+            elif isinstance(arg, int):
+                # IntVar * int → LinearExpr
                 result = result * arg
             else:
-                assert hasattr(arg, 'type'), \
-                    f"TIMES not supported between linear expressions, only IntVars. Got: {type(arg)}"
-                temp = model.NewIntVar(arg.Proto().domain[0], arg.Proto().domain[-1], f"mult_{id(node)}")
+                # IntVar * IntVar → necessita variable auxiliar
+                lb = min(result.Proto().domain[0] * arg.Proto().domain[0],
+                         result.Proto().domain[0] * arg.Proto().domain[-1],
+                         result.Proto().domain[-1] * arg.Proto().domain[0],
+                         result.Proto().domain[-1] * arg.Proto().domain[-1])
+                ub = max(result.Proto().domain[0] * arg.Proto().domain[0],
+                         result.Proto().domain[0] * arg.Proto().domain[-1],
+                         result.Proto().domain[-1] * arg.Proto().domain[0],
+                         result.Proto().domain[-1] * arg.Proto().domain[-1])
+                temp = model.NewIntVar(lb, ub, f"mult_{id(node)}")
                 model.AddMultiplicationEquality(temp, result, arg)
                 result = temp
         return result
