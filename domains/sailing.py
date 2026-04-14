@@ -95,9 +95,14 @@ class SailingDomain(Domain):
         all_y = list(data['y'].values())
         all_d = list(data['d'].values())
 
-        x_lb, x_ub = min(all_x) - 50, max(all_x) + 50
-        y_lb, y_ub = min(all_y) - 50, max(all_y) + 50
-        d_lb, d_ub = min(all_d), max(all_d)
+        d_min = min(data['d'].values()) if data['d'] else 0
+        d_max = max(data['d'].values()) if data['d'] else 0
+
+        x_lb = min(all_x) - abs(d_min) // 2
+        x_ub = max(all_x) + abs(d_min) // 2
+        y_lb = d_min - 50
+        y_ub = max(all_y) + 50
+        d_lb, d_ub = d_min, d_max
 
         saved = Fluent('saved', BoolType(), person=Person)
         x = Fluent('x', IntType(x_lb, x_ub), boat=Boat)

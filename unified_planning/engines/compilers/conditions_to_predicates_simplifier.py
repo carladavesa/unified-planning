@@ -15,7 +15,7 @@
 """This module defines the preconditions to table simplifier class."""
 from itertools import product
 
-from unified_planning.exceptions import UPProblemDefinitionError
+from unified_planning.engines.compilers.utils import solve_with_cp_sat, requires_arithmetic
 from unified_planning.model.operators import OperatorKind
 from bidict import bidict
 from ortools.sat.python import cp_model
@@ -35,30 +35,9 @@ import unified_planning as up
 import unified_planning.engines as engines
 import re
 
-class CPSolutionCollector(cp_model.CpSolverSolutionCallback):
-    """Collects all unique solutions from CP-SAT solver."""
-
-    def __init__(self, variables: list[cp_model.IntVar]):
-        cp_model.CpSolverSolutionCallback.__init__(self)
-        self.__variables = variables
-        self.__solutions = []
-        self.__seen = set()  # To detect duplicates
-
-    def on_solution_callback(self):
-        solution = {str(v): self.Value(v) for v in self.__variables}
-        sol_tuple = tuple(sorted(solution.items()))
-
-        if sol_tuple not in self.__seen:
-            self.__seen.add(sol_tuple)
-            self.__solutions.append(solution)
-
-    @property
-    def solutions(self) -> list[dict[str, int]]:
-        return self.__solutions
-
-class PreconditionsToTableSimplifier(engines.engine.Engine, CompilerMixin):
+class ArithmeticConditionsToPredicatesSimplifier(engines.engine.Engine, CompilerMixin):
     """
-    Preconditions To Static Predicate Compiler:
+    Arithmetic Conditions To Static Predicates Compiler:
     Uses CP-SAT to enumerate all valid value combinations satisfying the action preconditions
     (including bounds of unconditional numeric effects). Creates a new boolean static predicate
     per action, instantiated with all valid combinations as true in the initial state.
@@ -67,9 +46,10 @@ class PreconditionsToTableSimplifier(engines.engine.Engine, CompilerMixin):
 
     def __init__(self):
         engines.engine.Engine.__init__(self)
-        CompilerMixin.__init__(self, CompilationKind.PRECONDITIONS_TO_TABLE_SIMPLIFIER)
+        CompilerMixin.__init__(self, CompilationKind.ARITHMETIC_CONDITIONS_TO_PREDICATES_SIMPLIFIER)
         self._domains: Dict[str, Tuple[int, int]] = {}
         self._number_objects_cache: Dict[int, FNode] = {}
+        self._conditions: Dict[FNode, int] = {}
 
     @property
     def name(self):
@@ -140,11 +120,11 @@ class PreconditionsToTableSimplifier(engines.engine.Engine, CompilerMixin):
 
     @staticmethod
     def supports(problem_kind):
-        return problem_kind <= PreconditionsToTableSimplifier.supported_kind()
+        return problem_kind <= ArithmeticConditionsToPredicatesSimplifier.supported_kind()
 
     @staticmethod
     def supports_compilation(compilation_kind: CompilationKind) -> bool:
-        return compilation_kind == CompilationKind.PRECONDITIONS_TO_TABLE_SIMPLIFIER
+        return compilation_kind == CompilationKind.ARITHMETIC_CONDITIONS_TO_PREDICATES_SIMPLIFIER
 
     @staticmethod
     def resulting_problem_kind(
@@ -886,90 +866,6 @@ class PreconditionsToTableSimplifier(engines.engine.Engine, CompilerMixin):
             return self._index_to_object.get((user_type, index))
         return None
 
-    def _get_static_fluents(self, problem: Problem, fluents: dict[FNode, FNode]) -> Dict[FNode, FNode]:
-        """
-        Get all static fluent instances throughout the problem.
-        Two cases:
-        1. Effect has parameters (e.g., onboard(a)) -> ALL instances of that fluent are modifiable
-        2. Effect has concrete indices/objects -> only THAT specific instance is modifiable
-        """
-        # Base fluents base that are modifiable with parameters (cover all instances)
-        modifiable_fluent_names = set()
-        # Concrete instances that are modifiable
-        modifiable_instances = set()
-        for action in problem.actions:
-            for effect in action.effects:
-                effect_fluent = effect.fluent
-                fluent_base = effect_fluent.fluent()
-                # Check if the effect has parameters (no concrete instance)
-                has_parameter = any(
-                    arg.is_parameter_exp() or
-                    (hasattr(arg, 'is_variable_exp') and arg.is_variable_exp())
-                    for arg in effect_fluent.args
-                )
-                if has_parameter:
-                    modifiable_fluent_names.add(fluent_base.name)
-                else:
-                    modifiable_instances.add(effect_fluent)
-
-        static = {}
-        for f, v in fluents.items():
-            if f.is_fluent_exp():
-                if f.fluent().type.is_array_type():
-                    continue
-            if f.fluent().name in modifiable_fluent_names:
-                continue
-            if f in modifiable_instances:
-                continue
-            static[f] = v
-        return static
-
-    def _get_uniform_static_fluents(self, problem: Problem) -> Dict[str, FNode]:
-        """
-        Get static fluents that have the same value for ALL instantiations.
-        Returns: {fluent_name: constant_FNode}
-        """
-        fluent_values = {}
-        fluent_fnodes = {}
-        fluent_objects = {}
-
-        for fnode, value in self._static_fluents.items():
-            fluent = fnode.fluent()
-            name = fluent.name
-            if name not in fluent_values:
-                fluent_values[name] = set()
-                fluent_objects[name] = fluent
-
-            # Extract value
-            if value.is_bool_constant():
-                val = value.bool_constant_value()
-            elif value.is_int_constant():
-                val = value.int_constant_value()
-            elif value.is_real_constant():
-                val = value.real_constant_value()
-            else:
-                val = str(value)
-            fluent_values[name].add(val)
-            fluent_fnodes[name] = value
-
-        uniform = {}
-        for name, values in fluent_values.items():
-            if len(values) != 1: # More than one different value
-                continue
-            fluent = fluent_objects[name]
-            # Verify that all instances are statics
-            if fluent.signature:
-                domains = [list(problem.objects(param.type)) for param in fluent.signature]
-                expected_count = 1
-                for d in domains:
-                    expected_count *= len(d)
-                actual_count = sum(1 for f in self._static_fluents.keys() if f.fluent().name == name)
-                if actual_count == expected_count:
-                    uniform[name] = fluent_fnodes[name]
-            else:
-                uniform[name] = fluent_fnodes[name]
-        return uniform
-
     # ==================== QUERY METHODS ====================
 
     def _has_arithmetic(self, node: FNode) -> bool:
@@ -1216,18 +1112,6 @@ class PreconditionsToTableSimplifier(engines.engine.Engine, CompilerMixin):
                 # condition => (effect_expr <= ub)
                 model.Add(effect_expr <= ub).OnlyEnforceIf(condition_var)
 
-    def _solve_with_cp_sat(self, variables, cp_model_obj):
-        """Use CP-SAT solver to enumerate valid value assignments."""
-        # Solve
-        solver = cp_model.CpSolver()
-        collector = CPSolutionCollector(list(variables.values()))
-        solver.parameters.enumerate_all_solutions = True
-        status = solver.Solve(cp_model_obj, collector)
-
-        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-            return None
-        solutions = collector.solutions
-        return solutions
 
     def _solutions_to_dnf(self, new_problem: Problem, solutions: List[dict], variables: bidict) -> Optional[FNode]:
         """Convert CP-SAT solutions to DNF formula."""
@@ -1699,7 +1583,7 @@ class PreconditionsToTableSimplifier(engines.engine.Engine, CompilerMixin):
         self._add_effect_bounds_constraints(problem, unstatic_effects, variables, cp_model_obj)
 
         # Solve
-        solutions = self._solve_with_cp_sat(variables, cp_model_obj)
+        solutions = solve_with_cp_sat(variables, cp_model_obj)
         if not solutions:
             return None
 
@@ -1759,52 +1643,54 @@ class PreconditionsToTableSimplifier(engines.engine.Engine, CompilerMixin):
 
     # ==================== GOALS TRANSFORMATION ====================
 
+    def _get_predicate_for_condition(self, node: FNode, new_problem: Problem) -> Fluent:
+        if node in self._conditions:
+            c_id = self._conditions[node]
+            return new_problem.fluent(f"condition_{c_id}")
+        fluent_name = f"condition_{len(self._conditions)}"
+        goal_fluent = Fluent(fluent_name, BoolType())
+        print(node)
+        self._initialise_values()
+        new_problem.add_fluent(goal_fluent, default_initial_value=FALSE())
+        new_problem.add_goal(goal_fluent)
+
+        self._object_to_index = {}
+        axiom = up.model.Axiom(f"{goal_fluent}")
+        axiom.set_head(goal_fluent())
+
+        if arithmetic:
+            axiom_condition = self._expand_condition_with_cp(problem, new_problem, goal_expr, {})
+            axiom.add_body_condition(axiom_condition)
+            new_problem.add_axiom(axiom)
+        else:
+            new_goal_expr = self._get_new_expression(new_problem, goal_expr)
+            axiom.add_body_condition(new_goal_expr)
+            new_problem.add_axiom(axiom)
+
     def _transform_goals(self, problem: Problem, new_problem: Problem) -> None:
         """
         Transform goals, using CP-SAT only if there's arithmetic.
         """
-        # Replace static fluents
-        non_static_goals = []
+        arithmetic_goals = []
+        non_arithmetic_goals = []
+
         for goal in problem.goals:
-            ng = self._replace_static(goal)
-            if ng.is_and():
-                for g in ng.args:
-                    if g is not TRUE():
-                        non_static_goals.append(g)
+            if requires_arithmetic(goal):
+                arithmetic_goals.append(goal)
             else:
-                if ng is not TRUE():
-                    non_static_goals.append(ng)
-        if not non_static_goals:
-            return
+                non_arithmetic_goals.append(goal)
 
-        has_arithmetic = any(self._has_arithmetic(g) for g in non_static_goals)
+        # Non-arithmetic goals
+        for goal in non_arithmetic_goals:
+            transformed = self._transform_node(problem, goal)
+            if transformed and transformed != TRUE():
+                new_problem.add_goal(transformed)
 
-        # ===== NO ARITHMETIC: Direct transformation =====
-        if not has_arithmetic:
-            for goal in non_static_goals:
-                transformed = self._transform_node(problem, goal)
-                if transformed and transformed != TRUE():
-                    new_problem.add_goal(transformed)
-            return
-        # ===== HAS ARITHMETIC: Use CP-SAT =====
-        self._object_to_index = {}
-        self._index_to_object = {}
-        variables = bidict({})
-        cp_model_obj = cp_model.CpModel()
+        # Arithmetic goals: Create a fluent per goal and initialise the values using CP-SAT =====
+        for goal in arithmetic_goals:
+            new_goal = self._get_predicate_for_condition(new_problem, goal)
+            new_problem.add_goal(new_goal)
 
-        result_var = self._add_cp_constraints(new_problem, And(non_static_goals), variables, cp_model_obj)
-        cp_model_obj.Add(result_var == 1)
-
-        solutions = self._solve_with_cp_sat(variables, cp_model_obj)
-        if not solutions:
-            raise UPProblemDefinitionError("No possible goal!")
-
-        dnf_formula = self._solutions_to_dnf(new_problem, solutions, variables)
-
-        if dnf_formula:
-            new_problem.add_goal(dnf_formula)
-        else:
-            raise UPProblemDefinitionError("No possible goal!")
 
     def _transform_action_costs(
             self,
@@ -1873,12 +1759,6 @@ class PreconditionsToTableSimplifier(engines.engine.Engine, CompilerMixin):
 
         self._new_problem = new_problem
         self._number_ut = UserType('Number')
-
-        # === Find Static and Uniform Fluents ===
-        self._static_fluents = self._get_static_fluents(problem, problem.initial_values)
-        self._uniform_fluents = self._get_uniform_static_fluents(problem)
-        print("STATIC FLUENTS", self._static_fluents)
-        print("UNIFORM FLUENTS", self._uniform_fluents)
 
         # ========== Transform Fluents ==========
         self._transform_fluents(problem)
