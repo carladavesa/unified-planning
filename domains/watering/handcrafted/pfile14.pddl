@@ -33,7 +33,7 @@
 	(= (carrying agent1) 0)
 	(= (max_carry agent1) 5)
 	(= (carrying agent2) 0)
-	(= (max__carry agent2) 5)
+	(= (max_carry agent2) 5)
 	(= (poured plant1) 0)
 	(= (poured plant2) 0)
 	(= (poured plant3) 0)
