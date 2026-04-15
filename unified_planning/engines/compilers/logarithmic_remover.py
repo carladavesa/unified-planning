@@ -516,7 +516,7 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
             action_name = f"{old_action.name}_s{idx}"
             new_action = InstantaneousAction(action_name, _parameters=params, _env=problem.environment)
 
-            # Precondicions de la solució CP-SAT
+            # Fixed preconditions
             for var_str, value in solution.items():
                 if var_str in modified_fluent_strs:
                     continue
@@ -538,28 +538,20 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                     else:
                         new_action.add_precondition(Not(fnode))
 
-            # Precondicions directes (no CP-SAT)
+            # Direct preconditions
             for prec in direct_precs:
                 new_action.add_precondition(prec)
 
-            # Efectes dependents
+            # Dependent effects
             self._add_effects_for_solution(new_action, problem, new_problem, variables, solution, dependent_effects)
 
-            # Efectes independents
+            # Independent effect
             for effect in independent_effects:
                 if effect.is_increase() or effect.is_decrease():
-                    if requires_arithmetic(effect.condition):
-                        raise NotImplementedError(
-                            f"increase/decrease effect with arithmetic condition not yet supported: "
-                            f"{effect} in action {old_action.name}"
-                        )
-                    for new_eff in self._transform_increase_decrease_effect(effect, problem, new_problem):
-                        new_action.add_effect(new_eff.fluent, new_eff.value, new_eff.condition, new_eff.forall)
+                    raise NotImplementedError(f"Independent increase/decrease should be dependent: {effect}")
                 elif requires_arithmetic(effect.condition):
                     new_fluent = self._get_new_expression(new_problem, effect.fluent)
                     new_value = self._get_new_expression(new_problem, effect.value)
-                    if not new_fluent or not new_value:
-                        continue
                     expansions = self._expand_condition_with_cp(problem, new_problem, effect.condition, solution)
                     new_action.add_effect(new_fluent, new_value, expansions, effect.forall)
                 else:
@@ -568,7 +560,6 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                     new_cond = self._get_new_expression(new_problem, effect.condition) or TRUE()
                     if new_fluent and new_value:
                         new_action.add_effect(new_fluent, new_value, new_cond, effect.forall)
-
             new_actions.append(new_action)
 
         return new_actions
@@ -603,28 +594,18 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                     new_action.add_effect(old_effect.fluent, old_effect.value, new_condition, old_effect.forall)
             return [new_action]
 
-        # Classificar efectes: dependents vs independents
+        # Classify effects: dependents vs independents
         prec_vars = set()
         for prec in old_action.preconditions:
             for f in get_fluent_exps_in_expression(prec):
                 prec_vars.add(str(f))
 
+        # LR (different than IR): any effects on an integer is dependant
         dependent_effects = []
         independent_effects = []
         for effect in old_action.effects:
-            if effect.is_increase() or effect.is_decrease():
-                effect_vars = get_fluent_exps_in_expression(effect.fluent)
-                value_vars = get_fluent_exps_in_expression(effect.value)
-                if any(str(v) in prec_vars for v in effect_vars | value_vars):
-                    dependent_effects.append(effect)
-                else:
-                    independent_effects.append(effect)
-            elif requires_arithmetic(effect.value):
-                value_vars = get_fluent_exps_in_expression(effect.value)
-                if any(str(v) in prec_vars for v in value_vars):
-                    dependent_effects.append(effect)
-                else:
-                    independent_effects.append(effect)
+            if effect.fluent.type.is_int_type() or effect.is_increase() or effect.is_decrease():
+                dependent_effects.append(effect)
             else:
                 independent_effects.append(effect)
 
@@ -660,7 +641,6 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
         if not solutions:
             return []
 
-        # Transformar direct_precs directament
         transformed_direct_precs = []
         for prec in direct_precs:
             new_prec = self._get_new_expression(new_problem, prec)
