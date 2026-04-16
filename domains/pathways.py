@@ -154,16 +154,17 @@ class PathwaysDomain(Domain):
         possible = data['possible']
         substances = data['substances']
         choosable = data['choosable']
+        action_data = data['actions']
 
         problem = Problem('pathways_problem')
 
         # Bounds
-        max_val = max((v for v in numeric.values() if isinstance(v, (int, float)) and v > 0), default=10)
-        avail_ub = int(max_val) * 5
+        numsubs_ub = len(choosable)
+        avail_ub = numsubs_ub
 
         # Fluents
         avail = {s: Fluent(f'available_{s}', IntType(0, avail_ub)) for s in substances}
-        numsubs = Fluent('numsubs', IntType(0, max(len(choosable), 1)))
+        numsubs = Fluent('numsubs', IntType(0, numsubs_ub))
         chosen = {s: Fluent(f'chosen_{s}', BoolType()) for s in choosable}
         possible_f = {s: Fluent(f'possible_{s}', BoolType()) for s in choosable}
 
@@ -185,7 +186,6 @@ class PathwaysDomain(Domain):
                     problem.set_initial_value(avail[s](), int(val))
 
         # Actions
-        action_data = data['actions']
 
         for action_name, adata in action_data.items():
             a = InstantaneousAction(action_name)
