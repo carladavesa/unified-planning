@@ -68,6 +68,7 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
         self._object_to_index = {}
         self._index_to_object = {}
         self._goal_registry = []
+        self._conditions: Dict[FNode, str] = {}
 
     @property
     def name(self):
@@ -519,7 +520,11 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
             action_name = f"{old_action.name}_s{idx}"
             new_action = InstantaneousAction(action_name, _parameters=params, _env=problem.environment)
 
-            # Fixed preconditions
+            # Direct preconditions
+            for prec in direct_precs:
+                new_action.add_precondition(prec)
+
+            # Preconditions from solution
             for var_str, value in solution.items():
                 if var_str in modified_fluent_strs:
                     continue
@@ -541,20 +546,24 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                     else:
                         new_action.add_precondition(Not(fnode))
 
-            # Direct preconditions
-            for prec in direct_precs:
-                new_action.add_precondition(prec)
-
             # Dependent effects
             self._add_effects_for_solution(new_action, problem, new_problem, variables, solution, dependent_effects)
 
-            # Independent effect
+            # Independent effects - directly transform, no need to evaluate condition with solution
             for effect in independent_effects:
                 if effect.is_increase() or effect.is_decrease():
-                    raise NotImplementedError(f"Independent increase/decrease should be dependent: {effect}")
+                    if requires_arithmetic(effect.condition):
+                        raise NotImplementedError(
+                            f"increase/decrease effect with arithmetic condition not yet supported: "
+                            f"{effect} in action {old_action.name}"
+                        )
+                    for new_eff in self._transform_increase_decrease_effect(effect, problem, new_problem):
+                        new_action.add_effect(new_eff.fluent, new_eff.value, new_eff.condition, new_eff.forall)
                 elif requires_arithmetic(effect.condition):
                     new_fluent = self._get_new_expression(new_problem, effect.fluent)
                     new_value = self._get_new_expression(new_problem, effect.value)
+                    if not new_fluent or not new_value:
+                        continue
                     expansions = self._expand_condition_with_cp(problem, new_problem, effect.condition, solution)
                     new_action.add_effect(new_fluent, new_value, expansions, effect.forall)
                 else:
@@ -563,9 +572,30 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                     new_cond = self._get_new_expression(new_problem, effect.condition) or TRUE()
                     if new_fluent and new_value:
                         new_action.add_effect(new_fluent, new_value, new_cond, effect.forall)
+
             new_actions.append(new_action)
 
         return new_actions
+
+    def _add_condition_as_axiom(self, problem: Problem, new_problem: Problem, expr: FNode):
+        if expr in self._conditions:
+            return new_problem.fluent(self._conditions[expr])
+
+        i = len(self._conditions)
+        fluent_name = f"condition_{i}"
+        from unified_planning.model import Fluent
+        condition_fluent = Fluent(fluent_name, DerivedBoolType())
+        new_problem.add_fluent(condition_fluent, default_initial_value=FALSE())
+
+        self._conditions[expr] = condition_fluent
+        self._object_to_index = {}
+        axiom = up.model.Axiom(f"{condition_fluent}")
+        axiom.set_head(condition_fluent())
+
+        axiom_condition = self._expand_condition_with_cp(problem, new_problem, expr, {})
+        axiom.add_body_condition(axiom_condition)
+        new_problem.add_axiom(axiom)
+        return condition_fluent()
 
     def _transform_action_integers(self, problem: Problem, new_problem: Problem, old_action: Action) -> List[Action]:
         params = OrderedDict(((p.name, p.type) for p in old_action.parameters))
@@ -597,36 +627,51 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                     new_action.add_effect(old_effect.fluent, old_effect.value, new_condition, old_effect.forall)
             return [new_action]
 
-        # Classify effects: dependents vs independents
+        # Classify effects
         prec_vars = set()
         for prec in old_action.preconditions:
             for f in get_fluent_exps_in_expression(prec):
                 prec_vars.add(str(f))
 
-        # LR (different than IR): any effects on an integer is dependant
         dependent_effects = []
         independent_effects = []
         for effect in old_action.effects:
-            if effect.fluent.type.is_int_type() or effect.is_increase() or effect.is_decrease():
-                dependent_effects.append(effect)
+            if effect.is_increase() or effect.is_decrease():
+                effect_vars = get_fluent_exps_in_expression(effect.fluent)
+                value_vars = get_fluent_exps_in_expression(effect.value)
+                if any(str(v) in prec_vars for v in effect_vars | value_vars):
+                    dependent_effects.append(effect)
+                else:
+                    independent_effects.append(effect)
+            elif requires_arithmetic(effect.value):
+                value_vars = get_fluent_exps_in_expression(effect.value)
+                if any(str(v) in prec_vars for v in value_vars):
+                    dependent_effects.append(effect)
+                else:
+                    independent_effects.append(effect)
             else:
                 independent_effects.append(effect)
 
-        # Fluents dels efectes dependents
+        # Fluents of the dependent effects
         dependent_fluent_strs = set()
         for effect in dependent_effects:
             for f in get_fluent_exps_in_expression(effect.fluent):
                 dependent_fluent_strs.add(str(f))
 
-        # Separar precondicions: les que van al CP-SAT vs les que van directament
+        # Precondition classification: those that depend on the dependent effects' fluents need CP-SAT expansion,
+        # the others can be directly transformed
         cp_precs = []
         direct_precs = []
         for prec in old_action.preconditions:
             prec_fluents = {str(f) for f in get_fluent_exps_in_expression(prec)}
-            if prec_fluents & dependent_fluent_strs or requires_arithmetic(prec):
+            if prec_fluents & dependent_fluent_strs:
                 cp_precs.append(prec)
+            elif requires_arithmetic(prec):
+                direct_precs.append(self._add_condition_as_axiom(problem, new_problem, prec))
             else:
-                direct_precs.append(prec)
+                new_prec = self._get_new_expression(new_problem, prec)
+                if new_prec and new_prec != TRUE():
+                    direct_precs.append(new_prec)
 
         # CP-SAT
         self._object_to_index = {}
@@ -638,23 +683,22 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
             result_var = add_cp_constraints(problem, And(cp_precs), variables, cp_model_obj, self._object_to_index)
             cp_model_obj.Add(result_var == 1)
 
-        add_effect_bounds_constraints(problem, variables, cp_model_obj, dependent_effects, self._object_to_index, True)
+        if dependent_effects:
+            add_effect_bounds_constraints(problem, variables, cp_model_obj, dependent_effects, self._object_to_index,
+                                          True)
 
-        solutions = solve_with_cp_sat(variables, cp_model_obj)
-        if not solutions:
-            return []
-
-        transformed_direct_precs = []
-        for prec in direct_precs:
-            new_prec = self._get_new_expression(new_problem, prec)
-            if new_prec and new_prec != TRUE():
-                transformed_direct_precs.append(new_prec)
+        if not cp_precs and not dependent_effects:
+            solutions = [{}]
+        else:
+            solutions = solve_with_cp_sat(variables, cp_model_obj)
+            if not solutions:
+                return []
 
         return self._create_multiple_actions(
             old_action, problem, new_problem, params, solutions, variables,
             dependent_effects=dependent_effects,
             independent_effects=independent_effects,
-            direct_precs=transformed_direct_precs,
+            direct_precs=direct_precs,
         )
 
     def _transform_actions(self, problem: Problem, new_problem: Problem) -> Dict[Action, Action]:

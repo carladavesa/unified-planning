@@ -50,6 +50,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
     def __init__(self):
         engines.engine.Engine.__init__(self)
         CompilerMixin.__init__(self, CompilationKind.INTEGERS_REMOVING)
+        self._conditions: Dict[FNode, str] = {}
 
     @property
     def name(self):
@@ -331,7 +332,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             # Dependent effects fixed by solution
             self._add_effects_for_solution(new_action, problem, new_problem, solution, dependent_effects)
 
-            # Efectes independents: iguals a totes les accions
+            # Independent effects:
             for effect in independent_effects:
                 if effect.is_increase() or effect.is_decrease():
                     if requires_arithmetic(effect.condition):
@@ -454,7 +455,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
     def _transform_action_integers(self, problem, new_problem, old_action):
         params = OrderedDict(((p.name, p.type) for p in old_action.parameters))
-
         has_arithmetic_preconditions = any(requires_arithmetic(p) for p in old_action.preconditions)
         has_arithmetic_effects = any(
             effect.value.node_type in self.ARITHMETIC_OPS
@@ -513,14 +513,28 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                 dependent_fluent_strs.add(str(f))
 
         # Separate preconditions into those handled by CP-SAT and those directly added to actions
+        #cp_precs = []
+        #direct_precs = []
+        #for prec in old_action.preconditions:
+        #    prec_fluents = {str(f) for f in get_fluent_exps_in_expression(prec)}
+        #    if prec_fluents & dependent_fluent_strs or requires_arithmetic(prec):
+        #        cp_precs.append(prec)
+        #    else:
+        #        direct_precs.append(prec)
+
         cp_precs = []
         direct_precs = []
         for prec in old_action.preconditions:
             prec_fluents = {str(f) for f in get_fluent_exps_in_expression(prec)}
-            if prec_fluents & dependent_fluent_strs or requires_arithmetic(prec):
+            if prec_fluents & dependent_fluent_strs:
                 cp_precs.append(prec)
+            elif requires_arithmetic(prec):
+                # Arithmetic precondition but not related to effects: direct disjunction of possible values
+                direct_precs.append(self._add_condition_as_axiom(problem, new_problem, prec))
             else:
-                direct_precs.append(prec)
+                new_prec = self._transform_node(problem, new_problem, prec)
+                if new_prec and new_prec != TRUE():
+                    direct_precs.append(new_prec)
 
         # Cas 2: CP-SAT for cp_precs and dependent effects
         self._object_to_index = {}
@@ -532,27 +546,26 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             result_var = add_cp_constraints(problem, And(cp_precs), variables, cp_model_obj, self._object_to_index)
             cp_model_obj.Add(result_var == 1)
 
-        add_effect_bounds_constraints(problem, variables, cp_model_obj, dependent_effects, self._object_to_index, False)
+        if dependent_effects:
+            add_effect_bounds_constraints(problem, variables, cp_model_obj, dependent_effects, self._object_to_index, False)
 
-        solutions = solve_with_cp_sat(variables, cp_model_obj)
-        if not solutions:
-            return []
+        # If there's nothing going to cp-sat, we force an empty solution
+        if not cp_precs and not dependent_effects:
+            solutions = [{}]
+        else:
+            solutions = solve_with_cp_sat(variables, cp_model_obj)
+            if not solutions:
+                return []
 
         self._index_to_object = {(t, idx): obj for (t, obj), idx in self._object_to_index.items()}
-
-        # Transform direct_precs
-        transformed_direct_precs = []
-        for prec in direct_precs:
-            new_prec = self._transform_node(problem, new_problem, prec)
-            if new_prec and new_prec != TRUE():
-                transformed_direct_precs.append(new_prec)
 
         return self._create_multiple_actions(
             old_action, problem, new_problem, params, solutions, variables,
             dependent_effects=dependent_effects,
             independent_effects=independent_effects,
-            direct_precs=transformed_direct_precs
+            direct_precs=direct_precs
         )
+
     def _add_goal_as_axiom(self, problem: Problem, new_problem: Problem, goal_expr: FNode, i, arithmetic):
         fluent_name = f"goal_{i}"
         from unified_planning.model import Fluent
@@ -573,12 +586,31 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             axiom.add_body_condition(new_goal_expr)
             new_problem.add_axiom(axiom)
 
+    def _add_condition_as_axiom(self, problem: Problem, new_problem: Problem, expr: FNode):
+        if expr in self._conditions:
+            return new_problem.fluent(self._conditions[expr])
+
+        i = len(self._conditions)
+        fluent_name = f"condition_{i}"
+        from unified_planning.model import Fluent
+        condition_fluent = Fluent(fluent_name, DerivedBoolType())
+        new_problem.add_fluent(condition_fluent, default_initial_value=FALSE())
+
+        self._conditions[expr] = condition_fluent
+        self._object_to_index = {}
+        axiom = up.model.Axiom(f"{condition_fluent}")
+        axiom.set_head(condition_fluent())
+
+        axiom_condition = self._expand_condition_with_cp(problem, new_problem, expr, {})
+        axiom.add_body_condition(axiom_condition)
+        new_problem.add_axiom(axiom)
+        return condition_fluent()
+
     def _transform_actions(self, problem: Problem, new_problem: Problem) -> Dict[Action, Action]:
         """Transform all actions by grounding integer parameters into objects."""
         new_to_old = {}
         for old_action in problem.actions:
-            temporal_action = old_action.clone()
-            new_actions = self._transform_action_integers(problem, new_problem, temporal_action)
+            new_actions = self._transform_action_integers(problem, new_problem, old_action)
             for new_action in new_actions:
                 new_problem.add_action(new_action)
                 new_to_old[new_action] = old_action
@@ -766,15 +798,12 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
         # ========== Transform Fluents ==========
         self._transform_fluents(problem, new_problem)
-        print("actions...")
         # ========== Transform Actions ==========
         new_to_old = self._transform_actions(problem, new_problem)
-        print("axioms...")
         # ========== Transform Axioms ==========
         self._transform_axioms(problem, new_problem, new_to_old)
 
         # ========== Transform Goals ==========
-        print("goals...")
         self._transform_goals(problem, new_problem)
 
         # ========== Transform Quality Metrics ==========
