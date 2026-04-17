@@ -432,13 +432,10 @@ def main(argv: Optional[list[str]] = None) -> None:
         planner_params[k] = v
 
     # Build the UP Problem: either from PDDL files on disk or from a registered Python domain
-    #if os.path.isfile(args.domain) and os.access(args.domain, os.R_OK) and \
-    #   os.path.isfile(args.instance) and os.access(args.instance, os.R_OK):
-    #    reader = PDDLReader()
-    #    problem = reader.parse_problem(args.domain, args.instance)
-    print(os.path.isfile(args.domain), os.path.isfile(args.instance))
     if os.path.isfile(args.domain) and os.access(args.domain, os.R_OK) and \
             os.path.isfile(args.instance) and os.access(args.instance, os.R_OK):
+        #    reader = PDDLReader()
+        #    problem = reader.parse_problem(args.domain, args.instance)
         solve_with_fd_direct(args.domain, args.instance, timeout=args.timeout)
         return
     else:
