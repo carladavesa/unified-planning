@@ -27,6 +27,7 @@ from .counters import DOMAIN as counters
 from .delivery import DOMAIN as delivery
 from .expedition import DOMAIN as expedition
 from .farmland import DOMAIN as farmland
+from .hydro_power import DOMAIN as hydro_power
 from .labyrinth import DOMAIN as labyrinth
 from .market_trader import DOMAIN as market_trader
 from .mystery_prime import DOMAIN as mystery_prime
@@ -49,6 +50,7 @@ DOMAINS: dict[str, Domain] = {
     "delivery": delivery,
     "expedition": expedition,
     "farmland": farmland,
+    "hydro_power": hydro_power,
     "labyrinth": labyrinth,
     "market_trader": market_trader,
     "mystery_prime": mystery_prime,
