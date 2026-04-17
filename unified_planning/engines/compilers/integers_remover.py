@@ -778,7 +778,12 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         """Main compilation"""
         assert isinstance(problem, Problem)
 
-        problem = remove_write_only_fluents(problem)
+        original_problem = problem
+        cleaned_problem = remove_write_only_fluents(problem)
+
+        # Mapping name between cleaned and original actions
+        name_to_original = {a.name: a for a in original_problem.actions}
+
         new_problem = problem.clone()
         new_problem.name = f"{self.name}_{problem.name}"
         new_problem.clear_fluents()
@@ -796,16 +801,22 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             new_problem.add_object(Object(f'n{v}', ut_number))
 
         # ========== Transform Fluents ==========
-        self._transform_fluents(problem, new_problem)
+        self._transform_fluents(cleaned_problem, new_problem)
 
         # ========== Transform Actions ==========
-        new_to_old = self._transform_actions(problem, new_problem)
+        new_to_old_cleaned = self._transform_actions(cleaned_problem, new_problem)
 
         # ========== Transform Axioms ==========
-        self._transform_axioms(problem, new_problem, new_to_old)
+        self._transform_axioms(cleaned_problem, new_problem, new_to_old_cleaned)
+
+        # Remap
+        new_to_old = {}
+        for new_action, cleaned_action in new_to_old_cleaned.items():
+            original = name_to_original.get(cleaned_action.name, cleaned_action)
+            new_to_old[new_action] = original
 
         # ========== Transform Goals ==========
-        self._transform_goals(problem, new_problem)
+        self._transform_goals(cleaned_problem, new_problem)
 
         # ========== Transform Quality Metrics ==========
         for metric in problem.quality_metrics:

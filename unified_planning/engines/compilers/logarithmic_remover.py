@@ -895,8 +895,13 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
         """Main compilation"""
         assert isinstance(problem, Problem)
 
-        problem = remove_write_only_fluents(problem)
-        new_problem = problem.clone()
+        original_problem = problem
+        cleaned_problem = remove_write_only_fluents(problem)
+
+        # Mapping name between cleaned and original actions
+        name_to_original = {a.name: a for a in original_problem.actions}
+
+        new_problem = cleaned_problem.clone()
         new_problem.name = f"{self.name}_{problem.name}"
         new_problem.clear_fluents()
         new_problem.clear_actions()
@@ -913,13 +918,19 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
                 )
 
         # ========== Transform Fluents ==========
-        self._transform_fluents(problem, new_problem)
+        self._transform_fluents(cleaned_problem, new_problem)
 
         # ========== Transform Actions ==========
-        new_to_old = self._transform_actions(problem, new_problem)
+        new_to_old_cleaned = self._transform_actions(cleaned_problem, new_problem)
+
+        # Remap
+        new_to_old = {}
+        for new_action, cleaned_action in new_to_old_cleaned.items():
+            original = name_to_original.get(cleaned_action.name, cleaned_action)
+            new_to_old[new_action] = original
 
         # ========== Transform Goals ==========
-        self._transform_goals(problem, new_problem)
+        self._transform_goals(cleaned_problem, new_problem)
 
         # ========== Transform Quality Metrics ==========
         for metric in problem.quality_metrics:
