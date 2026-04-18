@@ -142,10 +142,7 @@ class HydroPowerDomain(Domain):
         stored_units_ub = total_storage
         stored_capacity_ub = total_storage
 
-        # funds: pot créixer fins al goal + una transacció
-        # max guany per transacció: generate amb max_value = 20 * max_value
-        max_gain = 20 * max_value
-        funds_ub = max(goal_funds + max_gain, initial_funds + max_gain)
+        funds_ub = goal_funds + 20 * max_value
 
         problem = Problem('hydro_power_problem')
 
@@ -155,7 +152,7 @@ class HydroPowerDomain(Domain):
 
         # Objects
         time_objs = {t: problem.add_object(t, Time) for t in times}
-        turnvalue_objs = {n: problem.add_object(n, TurnValue) for n in turnvalues}
+        turnvalue_objs = {n: problem.add_object(f'tv_{n}', TurnValue) for n in turnvalues}
 
         # Fluents
         timenow = Fluent('timenow', BoolType(), t=Time)
@@ -203,26 +200,25 @@ class HydroPowerDomain(Domain):
         problem.add_action(advancetime)
 
         # pumpwaterup(?t1, ?n1)
-        pumpwaterup = InstantaneousAction('pumpwaterup', t1=Time, n1=TurnValue)
-        t1, n1 = pumpwaterup.parameter('t1'), pumpwaterup.parameter('n1')
+        pumpwaterup = InstantaneousAction('pumpwaterup', t=Time, tv=TurnValue)
+        t, tv = pumpwaterup.parameter('t'), pumpwaterup.parameter('tv')
         pumpwaterup.add_precondition(timenow(t1))
-        pumpwaterup.add_precondition(GE(funds_f(), Times(Int(21), value_f(n1))))
+        pumpwaterup.add_precondition(GE(funds_f(), Times(Int(21), value_f(tv))))
         pumpwaterup.add_precondition(GE(stored_capacity_f(), Int(1)))
-        pumpwaterup.add_precondition(demand_f(t1, n1))
+        pumpwaterup.add_precondition(demand_f(t, tv))
         pumpwaterup.add_increase_effect(stored_units_f(), Int(1))
         pumpwaterup.add_decrease_effect(stored_capacity_f(), Int(1))
-        pumpwaterup.add_decrease_effect(funds_f(), Times(Int(21), value_f(n1)))
+        pumpwaterup.add_decrease_effect(funds_f(), Times(Int(21), value_f(tv)))
         problem.add_action(pumpwaterup)
 
-        # generate(?t1, ?n1)
-        generate = InstantaneousAction('generate', t1=Time, n1=TurnValue)
-        t1, n1 = generate.parameter('t1'), generate.parameter('n1')
-        generate.add_precondition(timenow(t1))
+        generate = InstantaneousAction('generate', t=Time, tv=TurnValue)
+        t, tv = generate.parameter('t'), generate.parameter('tv')
+        generate.add_precondition(timenow(t))
         generate.add_precondition(GE(stored_units_f(), Int(1)))
-        generate.add_precondition(demand_f(t1, n1))
+        generate.add_precondition(demand_f(t, tv))
         generate.add_decrease_effect(stored_units_f(), Int(1))
         generate.add_increase_effect(stored_capacity_f(), Int(1))
-        generate.add_increase_effect(funds_f(), Times(Int(20), value_f(n1)))
+        generate.add_increase_effect(funds_f(), Times(Int(20), value_f(tv)))
         problem.add_action(generate)
 
         # Goal
