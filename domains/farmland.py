@@ -111,6 +111,7 @@ class FarmlandDomain(Domain):
         max_initial = max(x_init.values(), default=0)
         x_ub = max(max_goal * 2, max_initial, total_x // len(farms) * 3)
         x_ub = min(x_ub, total_x)
+        cost_ub = total_x // 4
 
         # Fluents
         adj = Fluent('adj', f1=Farm, f2=Farm)
