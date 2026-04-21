@@ -116,8 +116,8 @@ class ExpeditionDomain(Domain):
         # waypointsupplies initial max bounds it (plus accumulation from stores)
         # Total supplies are conserved (retrieve ↔ store are inverse, move consumes)
         # Upper bound: initial total supplies
-        total_initial_supplies = sum(waypointsupplies_init.values()) + sum(sledsupplies_init.values())
-        waypointsupplies_ub = min(total_initial_supplies, len(sleds) * len(waypoints) * 5)
+        reasonable_supply = len(sleds) * len(waypoints) * 2
+        waypointsupplies_ub = reasonable_supply
 
         problem = Problem('expedition_problem')
 
