@@ -137,7 +137,8 @@ class RoverDomain(Domain):
 
         # Fluents enters
         energy = Fluent('energy', IntType(0, energy_ub), r=Rover)
-        total_cost = Fluent('total_cost', IntType(0, 10000))
+        max_recharges = 50
+        total_cost = Fluent('total-cost', IntType(0, max_recharges))
         problem.add_fluent(energy, default_initial_value=Int(0))
         problem.add_fluent(total_cost, default_initial_value=Int(0))
 
