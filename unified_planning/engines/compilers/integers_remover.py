@@ -818,7 +818,12 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             new_to_old[new_action] = original
 
         # ========== Transform Goals ==========
+        actions_before = set(new_problem.actions)
         self._transform_goals(cleaned_problem, new_problem)
+        # Register dummy goal-achievement actions in new_to_old (map to themselves)
+        for action in new_problem.actions:
+            if action not in actions_before and action not in new_to_old:
+                new_to_old[action] = action
 
         # ========== Transform Quality Metrics ==========
         for metric in problem.quality_metrics:
