@@ -65,10 +65,38 @@ class RoverDomain(Domain):
                 bool_facts.add((pred, args))
 
         # Goal
-        goal_m = re.search(r'\(:goal\s*\(and(.*?)\)\s*\)', content, re.DOTALL)
-        goal_str = goal_m.group(1) if goal_m else ""
+        # Goal: troba (:goal i extreu fins al matching close paren
+        goal_idx = content.find('(:goal')
+        if goal_idx >= 0:
+            # Skip past "(:goal"
+            i = goal_idx + len('(:goal')
+            # Find first '('
+            while i < len(content) and content[i] != '(':
+                i += 1
+            # Now match parens to find the body
+            depth = 0
+            start = i
+            while i < len(content):
+                if content[i] == '(':
+                    depth += 1
+                elif content[i] == ')':
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            goal_body = content[start:i + 1]  # incloent el paren matching
+            # goal_body és tipus "(and (pred1 args) (pred2 args) ...)"
+            # Treu el "(and" del començament
+            if goal_body.startswith('(and'):
+                goal_str = goal_body[4:-1]  # treu "(and" i el ")" final
+            else:
+                goal_str = goal_body  # cas sense "and" si només hi ha 1 goal
+        else:
+            goal_str = ""
+
+        # Ara extreu predicats: tots els tokens dins parèntesis
         goals = []
-        for m in re.finditer(r'\(([\w-]+(?:\s+\w+)*)\)', goal_str):
+        for m in re.finditer(r'\(([\w-]+(?:\s+[\w-]+)*)\)', goal_str):
             parts = m.group(1).strip().split()
             pred = parts[0].lower().replace('-', '_')
             args = tuple(p.lower() for p in parts[1:])
@@ -128,8 +156,6 @@ class RoverDomain(Domain):
                 o = Object(name, ut)
                 problem.add_object(o)
                 obj_map[name] = o
-
-        def o(name): return obj_map[name]
 
         # Bounds per energy
         max_energy = 100
