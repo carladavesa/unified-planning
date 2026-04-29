@@ -30,13 +30,14 @@ from unified_planning.engines.mixins.compiler import CompilationKind, CompilerMi
 from unified_planning.engines.results import CompilerResult
 from unified_planning.exceptions import UPProblemDefinitionError
 from unified_planning.model import (
-    Problem, Action, ProblemKind, Effect, EffectKind, Object, FNode, InstantaneousAction, Axiom, Fluent
+    Problem, Action, ProblemKind, Effect, EffectKind, Object, FNode, InstantaneousAction, Axiom, Fluent,
+    MinimizeActionCosts
 )
 from unified_planning.model.problem_kind_versioning import LATEST_PROBLEM_KIND_VERSION
 from unified_planning.engines.compilers.utils import get_fresh_name, replace_action, updated_minimize_action_costs
 from typing import Optional, Iterator, OrderedDict, Union
 from functools import partial
-from unified_planning.shortcuts import And, Or, Equals, Not, FALSE, UserType, TRUE, ObjectExp, DerivedBoolType
+from unified_planning.shortcuts import And, Or, Equals, Not, FALSE, UserType, TRUE, ObjectExp, DerivedBoolType, BoolType
 from typing import Dict
 
 class IntegersRemover(engines.engine.Engine, CompilerMixin):
@@ -566,25 +567,38 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             direct_precs=direct_precs
         )
 
-    def _add_goal_as_axiom(self, problem: Problem, new_problem: Problem, goal_expr: FNode, i, arithmetic):
-        fluent_name = f"goal_{i}"
-        from unified_planning.model import Fluent
-        goal_fluent = Fluent(fluent_name, DerivedBoolType())
-        new_problem.add_fluent(goal_fluent, default_initial_value=FALSE())
-        new_problem.add_goal(goal_fluent)
+    def _add_goal_as_action(self, problem: Problem, new_problem: Problem, goal_expr: FNode, i, arithmetic):
+        """
+        Encode a (sub)goal as a dummy achievement action.
 
+        The goal expression becomes the precondition of an action whose only effect
+        activates a propositional flag. The flag is then added as a (Boolean) goal.
+        """
+        flag_name = f"goal_{i}_reached"
+        goal_flag = Fluent(flag_name, BoolType())
+        new_problem.add_fluent(goal_flag, default_initial_value=FALSE())
+        new_problem.add_goal(goal_flag())
+
+        # Build the precondition
         self._object_to_index = {}
-        axiom = up.model.Axiom(f"{goal_fluent}")
-        axiom.set_head(goal_fluent())
-
         if arithmetic:
-            axiom_condition = self._expand_condition_with_cp(problem, new_problem, goal_expr, {})
-            axiom.add_body_condition(axiom_condition)
-            new_problem.add_axiom(axiom)
+            precondition = self._expand_condition_with_cp(problem, new_problem, goal_expr, {})
         else:
-            new_goal_expr = self._transform_node(problem, new_problem, goal_expr)
-            axiom.add_body_condition(new_goal_expr)
-            new_problem.add_axiom(axiom)
+            precondition = self._transform_node(problem, new_problem, goal_expr)
+
+        # If precondition simplifies to TRUE, set flag in the initial state and skip the action
+        if precondition is None or precondition == FALSE():
+            return
+        if precondition == TRUE():
+            new_problem.set_initial_value(goal_flag(), TRUE())
+            return
+
+        # Create the dummy action
+        action_name = f"achieve_goal_{i}"
+        achieve = InstantaneousAction(action_name, _env=problem.environment)
+        achieve.add_precondition(precondition)
+        achieve.add_effect(goal_flag(), TRUE())
+        new_problem.add_action(achieve)
 
     def _add_condition_as_axiom(self, problem: Problem, new_problem: Problem, expr: FNode):
         if expr in self._conditions:
@@ -681,8 +695,11 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
     def _transform_goals(self, problem: Problem, new_problem: Problem) -> None:
         """
-        Transform goals: separate arithmetic and non-arithmetic.
-        Create an auxiliary axiom por each goal.
+        Transform goals into dummy achievement actions.
+
+        Each compound or arithmetic subgoal becomes the precondition of a dedicated
+        action whose only effect activates a propositional flag. The final goal is
+        the conjunction of these flags.
         """
         arithmetic_goals = []
         non_arithmetic_goals = []
@@ -693,31 +710,17 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             else:
                 non_arithmetic_goals.append(goal)
 
-        # Non-arithmetic goals
+        # Non-arithmetic goals: simple atoms go straight; compound ones via dummy action
         for i, goal in enumerate(non_arithmetic_goals):
-            #transformed = self._transform_node(problem, new_problem, goal)
-            #if transformed and transformed != TRUE():
-            #    new_problem.add_goal(transformed)
             if goal.is_fluent_exp():
                 new_problem.add_goal(goal)
             else:
-                self._add_goal_as_axiom(problem, new_problem, goal, i, False)
+                self._add_goal_as_action(problem, new_problem, goal, i, False)
 
-        # a)
-        # Create a predicate for each arithmetic goal
+        # Arithmetic goals: always via dummy action
         for i, goal in enumerate(arithmetic_goals):
             j = len(non_arithmetic_goals) + i
-            self._add_goal_as_axiom(problem, new_problem, goal, j, True)
-
-        # b)
-        # Create a predicate for all arithmetic goals
-        #fluent_name = f"goal_all"
-        #from unified_planning.model import Fluent
-        #goal_fluent = Fluent(fluent_name, DerivedBoolType())
-        #new_problem.add_fluent(goal_fluent, default_initial_value=FALSE())
-        #new_problem.add_goal(goal_fluent())
-        #print("Adding goal as axiom...", arithmetic_goals, goal_fluent)
-        #self._add_goal_as_axiom(problem, new_problem, And(arithmetic_goals), goal_fluent)
+            self._add_goal_as_action(problem, new_problem, goal, j, True)
 
     def _get_object_from_index(self, user_type, index):
         """
@@ -792,7 +795,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         new_problem.clear_axioms()
         new_problem.initial_values.clear()
         new_problem.clear_quality_metrics()
-        self._goal_registry = []
 
         # Compute the range of integer values needed across the entire problem
         global_lb, global_ub = compute_integer_range(problem)
@@ -821,12 +823,19 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
         # ========== Transform Quality Metrics ==========
         for metric in problem.quality_metrics:
             if metric.is_minimize_action_costs():
+                updated = updated_minimize_action_costs(
+                    metric,
+                    new_to_old,
+                    new_problem.environment
+                )
+                # Dummy goal-achievement actions have cost 0
+                em = new_problem.environment.expression_manager
+                new_costs = dict(updated.costs)
+                for action in new_problem.actions:
+                    if action.name.startswith("achieve_goal_"):
+                        new_costs[action] = em.Int(0)
                 new_problem.add_quality_metric(
-                    updated_minimize_action_costs(
-                        metric,
-                        new_to_old,
-                        new_problem.environment
-                    )
+                    MinimizeActionCosts(new_costs, default=updated.default, environment=new_problem.environment)
                 )
             else:
                 new_problem.add_quality_metric(metric)

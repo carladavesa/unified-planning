@@ -49,7 +49,7 @@ from unified_planning.engines.compilers.utils import (
 from unified_planning.exceptions import UPProblemDefinitionError
 from typing import Dict, List, Optional, OrderedDict, Iterable, Tuple
 from functools import partial
-from unified_planning.shortcuts import And, Not, Iff, FALSE, TRUE, Or, DerivedBoolType
+from unified_planning.shortcuts import And, Not, Iff, FALSE, TRUE, Or, DerivedBoolType, BoolType
 
 
 class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
@@ -369,30 +369,48 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
 
     # ==================== GOALS TRANSFORMATION ====================
 
-    def _add_goal_as_axiom(self, problem: Problem, new_problem: Problem, goal_expr: FNode, i, arithmetic):
-        fluent_name = f"goal_{i}"
-        from unified_planning.model import Fluent
-        goal_fluent = Fluent(fluent_name, DerivedBoolType())
-        new_problem.add_fluent(goal_fluent, default_initial_value=FALSE())
-        new_problem.add_goal(goal_fluent)
+    def _add_goal_as_action(self, problem: Problem, new_problem: Problem, goal_expr: FNode, i, arithmetic):
+        """
+        Encode a (sub)goal as a dummy achievement action.
+
+        The goal expression becomes the precondition of an action whose only effect
+        activates a propositional flag. The flag is then added as a (Boolean) goal.
+        """
+
+        flag_name = f"goal_{i}_reached"
+        goal_flag = Fluent(flag_name, BoolType())
+        new_problem.add_fluent(goal_flag, default_initial_value=FALSE())
+        new_problem.add_goal(goal_flag())
 
         self._object_to_index = {}
-        axiom = up.model.Axiom(f"{goal_fluent}")
-        axiom.set_head(goal_fluent())
-
         if arithmetic:
-            axiom_condition = self._expand_condition_with_cp(problem, new_problem, goal_expr, {})
-            axiom.add_body_condition(axiom_condition)
-            new_problem.add_axiom(axiom)
+            precondition = self._expand_condition_with_cp(problem, new_problem, goal_expr, {})
         else:
-            new_goal_expr = self._get_new_expression(new_problem, goal_expr)
-            axiom.add_body_condition(new_goal_expr)
-            new_problem.add_axiom(axiom)
+            precondition = self._get_new_expression(new_problem, goal_expr)
+
+        # If precondition simplifies to TRUE, set flag in the initial state and skip the action
+        if precondition is None or precondition == FALSE():
+            # Goal is unreachable; let the planner detect that
+            return
+        if precondition == TRUE():
+            new_problem.set_initial_value(goal_flag(), TRUE())
+            return
+
+        # Create the dummy action
+        action_name = f"achieve_goal_{i}"
+        achieve = InstantaneousAction(action_name, _env=problem.environment)
+        achieve.add_precondition(precondition)
+        achieve.add_effect(goal_flag(), TRUE())
+        new_problem.add_action(achieve)
 
     def _transform_goals(self, problem: Problem, new_problem: Problem) -> None:
         """
-        Transform goals: separate arithmetic and non-arithmetic.
-        Create an auxiliary axiom por each goal.
+        Transform goals into dummy achievement actions.
+
+        Each compound or arithmetic subgoal becomes the precondition of a dedicated
+        action whose only effect activates a propositional flag. The final goal is
+        the conjunction of these flags. This avoids derived axioms over ground
+        objects, which Fast Downward's translator does not support.
         """
         non_arithmetic_goals = []
         arithmetic_goals = []
@@ -403,17 +421,17 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
             else:
                 non_arithmetic_goals.append(goal)
 
-        # Non-arithmetic goals - direct transformation
+        # Non-arithmetic goals: simple atoms go straight as goals; compound ones via dummy action
         for i, goal in enumerate(non_arithmetic_goals):
             if goal.is_fluent_exp():
                 new_problem.add_goal(goal)
             else:
-                self._add_goal_as_axiom(problem, new_problem, goal, i, False)
+                self._add_goal_as_action(problem, new_problem, goal, i, False)
 
-        # Create a predicate for each arithmetic goal
+        # Arithmetic goals: always via dummy action
         for i, goal in enumerate(arithmetic_goals):
             j = len(non_arithmetic_goals) + i
-            self._add_goal_as_axiom(problem, new_problem, goal, j, True)
+            self._add_goal_as_action(problem, new_problem, goal, j, True)
 
     # ==================== AXIOMS TRANSFORMATION ====================
 
@@ -826,13 +844,15 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
         new_problem.clear_quality_metrics()
         new_problem.initial_values.clear()
 
-        for action in problem.actions:
-            if action.parameters:
-                raise UPProblemDefinitionError(
-                    f"LogarithmicRemover requires fully grounded actions (no parameters). "
-                    f"Action '{action.name}' has parameters. "
-                    f"Apply GROUNDING before LOGARITHMIC_REMOVING."
-                )
+        #for action in problem.actions:
+        #    if action.parameters:
+        #        raise UPProblemDefinitionError(
+        #            f"LogarithmicRemover requires fully grounded actions (no parameters). "
+        #            f"Action '{action.name}' has parameters. "
+        #            f"Apply GROUNDING before LOGARITHMIC_REMOVING."
+        #        )
+
+        print(cleaned_problem)
 
         # ========== Transform Fluents ==========
         self._transform_fluents(cleaned_problem, new_problem)
@@ -852,15 +872,27 @@ class LogarithmicRemover(engines.engine.Engine, CompilerMixin):
         # ========== Transform Goals ==========
         self._transform_goals(cleaned_problem, new_problem)
 
+        # Add dummy actions
+        for action in new_problem.actions:
+            if action.name.startswith("achieve_goal_") and action not in new_to_old:
+                new_to_old[action] = action
+
         # ========== Transform Quality Metrics ==========
         for metric in problem.quality_metrics:
             if metric.is_minimize_action_costs():
+                updated = updated_minimize_action_costs(
+                    metric,
+                    new_to_old,
+                    new_problem.environment
+                )
+                # Dummy goal-achievement actions have cost 0
+                em = new_problem.environment.expression_manager
+                new_costs = dict(updated.costs)
+                for action in new_problem.actions:
+                    if action.name.startswith("achieve_goal_"):
+                        new_costs[action] = em.Int(0)
                 new_problem.add_quality_metric(
-                    updated_minimize_action_costs(
-                        metric,
-                        new_to_old,
-                        new_problem.environment
-                    )
+                    MinimizeActionCosts(new_costs, default=updated.default, environment=new_problem.environment)
                 )
             else:
                 new_problem.add_quality_metric(metric)
