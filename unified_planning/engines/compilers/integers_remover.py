@@ -567,39 +567,6 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
             direct_precs=direct_precs
         )
 
-    def _add_goal_as_action(self, problem: Problem, new_problem: Problem, goal_expr: FNode, i, arithmetic):
-        """
-        Encode a (sub)goal as a dummy achievement action.
-
-        The goal expression becomes the precondition of an action whose only effect
-        activates a propositional flag. The flag is then added as a (Boolean) goal.
-        """
-        flag_name = f"goal_{i}_reached"
-        goal_flag = Fluent(flag_name, BoolType())
-        new_problem.add_fluent(goal_flag, default_initial_value=FALSE())
-        new_problem.add_goal(goal_flag())
-
-        # Build the precondition
-        self._object_to_index = {}
-        if arithmetic:
-            precondition = self._expand_condition_with_cp(problem, new_problem, goal_expr, {})
-        else:
-            precondition = self._transform_node(problem, new_problem, goal_expr)
-
-        # If precondition simplifies to TRUE, set flag in the initial state and skip the action
-        if precondition is None or precondition == FALSE():
-            return
-        if precondition == TRUE():
-            new_problem.set_initial_value(goal_flag(), TRUE())
-            return
-
-        # Create the dummy action
-        action_name = f"achieve_goal_{i}"
-        achieve = InstantaneousAction(action_name, _env=problem.environment)
-        achieve.add_precondition(precondition)
-        achieve.add_effect(goal_flag(), TRUE())
-        new_problem.add_action(achieve)
-
     def _add_condition_as_axiom(self, problem: Problem, new_problem: Problem, expr: FNode):
         if expr in self._conditions:
             return new_problem.fluent(self._conditions[expr])()
@@ -695,32 +662,79 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
 
     def _transform_goals(self, problem: Problem, new_problem: Problem) -> None:
         """
-        Transform goals into dummy achievement actions.
+        Transform all compound/arithmetic goals into a single dummy achievement action.
 
-        Each compound or arithmetic subgoal becomes the precondition of a dedicated
-        action whose only effect activates a propositional flag. The final goal is
-        the conjunction of these flags.
+        Simple atomic goals are added directly. All compound and arithmetic goals are
+        combined into a single action whose precondition is their conjunction. This
+        ensures the planner cannot satisfy subgoals at different times — they must all
+        hold simultaneously in the same state.
+
+        Using one flag (instead of one per subgoal) is critical: persistent per-subgoal
+        flags would allow the planner to "lock in" a subgoal at one timestep and then
+        invalidate it when modifying shared fluents, falsely claiming the goal is met.
         """
-        arithmetic_goals = []
-        non_arithmetic_goals = []
+        direct_goals = []
+        compound_goals = []
 
         for goal in problem.goals:
+            if not requires_arithmetic(goal) and goal.is_fluent_exp():
+                direct_goals.append(goal)
+            else:
+                compound_goals.append(goal)
+
+        # Atomic Boolean goals: pass through directly
+        for goal in direct_goals:
+            new_problem.add_goal(goal)
+
+        if not compound_goals:
+            return
+
+        # Build precondition for the single dummy action
+        all_preconds = []
+        for goal in compound_goals:
+            self._object_to_index = {}
+            self._index_to_object = {}
             if requires_arithmetic(goal):
-                arithmetic_goals.append(goal)
+                try:
+                    cond = self._expand_condition_with_cp(problem, new_problem, goal, {})
+                except ValueError:
+                    print(f"[WARNING] Goal {goal} has no satisfying assignments; problem unsolvable")
+                    # Add an unsatisfiable goal so the planner reports infeasibility
+                    impossible = Fluent("impossible_goal", BoolType())
+                    new_problem.add_fluent(impossible, default_initial_value=FALSE())
+                    new_problem.add_goal(impossible())
+                    return
             else:
-                non_arithmetic_goals.append(goal)
+                cond = self._transform_node(problem, new_problem, goal)
 
-        # Non-arithmetic goals: simple atoms go straight; compound ones via dummy action
-        for i, goal in enumerate(non_arithmetic_goals):
-            if goal.is_fluent_exp():
-                new_problem.add_goal(goal)
-            else:
-                self._add_goal_as_action(problem, new_problem, goal, i, False)
+            if cond is None:
+                print(f"[WARNING] Cannot transform goal {goal}")
+                continue
+            if cond == FALSE():
+                print(f"[WARNING] Goal {goal} simplifies to FALSE; problem unsolvable")
+                impossible = Fluent("impossible_goal", BoolType())
+                new_problem.add_fluent(impossible, default_initial_value=FALSE())
+                new_problem.add_goal(impossible())
+                return
+            if cond == TRUE():
+                continue
+            all_preconds.append(cond)
 
-        # Arithmetic goals: always via dummy action
-        for i, goal in enumerate(arithmetic_goals):
-            j = len(non_arithmetic_goals) + i
-            self._add_goal_as_action(problem, new_problem, goal, j, True)
+        if not all_preconds:
+            # All compound goals trivially TRUE
+            return
+
+        # Single flag for all compound goals
+        flag = Fluent("all_compound_goals_reached", BoolType())
+        new_problem.add_fluent(flag, default_initial_value=FALSE())
+        new_problem.add_goal(flag())
+
+        full_precondition = And(all_preconds) if len(all_preconds) > 1 else all_preconds[0]
+
+        achieve = InstantaneousAction("achieve_all_compound_goals", _env=problem.environment)
+        achieve.add_precondition(full_precondition)
+        achieve.add_effect(flag(), TRUE())
+        new_problem.add_action(achieve)
 
     def _get_object_from_index(self, user_type, index):
         """
@@ -837,7 +851,7 @@ class IntegersRemover(engines.engine.Engine, CompilerMixin):
                 em = new_problem.environment.expression_manager
                 new_costs = dict(updated.costs)
                 for action in new_problem.actions:
-                    if action.name.startswith("achieve_goal_"):
+                    if action.name == "achieve_all_compound_goals":
                         new_costs[action] = em.Int(0)
                 new_problem.add_quality_metric(
                     MinimizeActionCosts(new_costs, default=updated.default, environment=new_problem.environment)
