@@ -141,11 +141,11 @@ class MysteryPrimeDomain(Domain):
         food_objs = {o.name: o for o in foods}
         person_objs = {o.name: o for o in persons}
 
-        max_locale = max(data['locale'].values(), default=10)
+        total_locale = sum(data['locale'].values()) if data['locale'] else 10
         max_harmony = max(data['harmony'].values(), default=10)
 
-        locale = Fluent('locale', IntType(0, max_locale + 10), food=Food)
-        harmony = Fluent('harmony', IntType(0, max_harmony + 10), person=Person)
+        locale = Fluent('locale', IntType(0, total_locale), food=Food)
+        harmony = Fluent('harmony', IntType(0, max_harmony), person=Person)
         craves = Fluent('craves', BoolType(), person=Person, food=Food)
         fears = Fluent('fears', BoolType(), person=Person, other=Person)
 
@@ -170,7 +170,7 @@ class MysteryPrimeDomain(Domain):
             a = InstantaneousAction(f'drink_{f1n}_{f2n}')
             f1o = food_objs[f1n]
             f2o = food_objs[f2n]
-            a.add_precondition(GE(Plus(Times(locale(f1o), 1), 1), 0))
+            a.add_precondition(GE(locale(f1o), 1))
             a.add_decrease_effect(locale(f1o), 1)
             a.add_increase_effect(locale(f2o), 1)
             problem.add_action(a)
@@ -184,7 +184,7 @@ class MysteryPrimeDomain(Domain):
             f1o = food_objs[f1n]
             f2o = food_objs[f2n]
             a.add_precondition(craves(po, f1o))
-            a.add_precondition(GE(Plus(Times(locale(f1o), 1), 1), 0))
+            a.add_precondition(GE(locale(f1o), 1))
             a.add_decrease_effect(locale(f1o), 1)
             a.add_effect(craves(po, f1o), False)
             a.add_effect(craves(po, f2o), True)
@@ -196,7 +196,7 @@ class MysteryPrimeDomain(Domain):
             do = person_objs[dn]
             po = person_objs[pn]
             fo = food_objs[fn]
-            a.add_precondition(GE(Plus(Times(harmony(po), 1), 1), 0))
+            a.add_precondition(GE(harmony(po), 1))
             a.add_precondition(craves(do, fo))
             a.add_precondition(craves(po, fo))
             a.add_decrease_effect(harmony(po), 1)
