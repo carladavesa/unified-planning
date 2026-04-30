@@ -27,7 +27,7 @@ class PathwaysDomain(Domain):
         content = re.sub(r';.*', '', content)
         content = re.sub(r'\s+', ' ', content).strip()
 
-        # Parse possible_* predicates from init
+        # Parse possible_*
         possible = [s.lower() for s in re.findall(r'\(possible_(\w+)\)', content)]
 
         # Parse numeric values
@@ -37,14 +37,52 @@ class PathwaysDomain(Domain):
             val = float(m.group(2))
             numeric[name] = int(val) if val == int(val) else val
 
-        # Parse goal string
-        goal_match = re.search(r'\(:goal\s*(.*?)\)\s*\)', content, re.DOTALL)
-        goal_str = goal_match.group(1).strip() if goal_match else ""
+        # Parse goal block correctly with paren counting
+        goal_idx = content.find('(:goal')
+        goal_str = ""
+        if goal_idx >= 0:
+            i = goal_idx + len('(:goal')
+            while i < len(content) and content[i] != '(':
+                i += 1
+            depth = 0
+            start = i
+            while i < len(content):
+                if content[i] == '(':
+                    depth += 1
+                elif content[i] == ')':
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            goal_str = content[start:i + 1]
+
+        # Now parse all individual goals from the (and ...) block
+        goals = []
+        # Each goal has form: (>= (+ (+ (* (available_X) 1.0) (* (available_Y) 1.0)) -T) 0.0)
+        # or single substance: (>= (+ (* (available_X) 1.0) -T) 0.0)
+        for gm in re.finditer(
+                r'\(>=\s*\(\+\s*\(\+\s*\(\*\s*\(available_(\w+)\)[^)]*\)\s*\(\*\s*\(available_(\w+)\)[^)]*\)\s*\)\s*-([\d.]+)',
+                goal_str
+        ):
+            s1, s2, t = gm.group(1).lower(), gm.group(2).lower(), int(float(gm.group(3)))
+            goals.append((s1, s2, t))
+
+        # Single-substance goals: (>= (+ (* (available_X) 1.0) -T) 0.0)
+        # Match these only if not already captured above
+        for gm in re.finditer(
+                r'\(>=\s*\(\+\s*\(\*\s*\(available_(\w+)\)[^)]*\)\s*-([\d.]+)\s*\)\s*[\d.]+',
+                goal_str
+        ):
+            s1, t = gm.group(1).lower(), int(float(gm.group(2)))
+            # Only add if not part of a 2-substance goal
+            if not any(s1 in (g[0], g[1]) for g in goals if len(g) == 3):
+                goals.append((s1, None, t))
 
         return {
             'possible': possible,
             'numeric': numeric,
             'goal_str': goal_str,
+            'goals': goals,
         }
 
     def _parse_domain(self, filepath: str) -> dict:
@@ -167,8 +205,43 @@ class PathwaysDomain(Domain):
                 adata['increases'].get(s, 0)
                 for adata in action_data.values()
             )
-            goal_threshold = 5
-            max_possible_avail[s] = max(initial + max_inc, goal_threshold)
+            # Calcula el threshold màxim per cada substància segons els goals reals
+            max_threshold_per_subst = {}
+            for goal_tuple in data['goals']:
+                s1, s2, t = goal_tuple
+                for s in [s1, s2]:
+                    if s is not None:
+                        max_threshold_per_subst[s] = max(max_threshold_per_subst.get(s, 0), t)
+
+            max_possible_avail = {}
+            for s in substances:
+                initial = numeric.get(f'available_{s}', 0)
+
+                max_inc = sum(
+                    adata['increases'].get(s, 0)
+                    for adata in action_data.values()
+                )
+
+                # Bound mínim per acceptar tots els operadors
+                max_op_val = 0
+                for adata in action_data.values():
+                    if s in adata['increases']:
+                        max_op_val = max(max_op_val, adata['increases'][s])
+                    if s in adata['decreases']:
+                        max_op_val = max(max_op_val, adata['decreases'][s])
+                    if s in adata['needs']:
+                        max_op_val = max(max_op_val, adata['needs'][s])
+
+                goal_t = max_threshold_per_subst.get(s, 0)
+
+                # Multipliquem per un factor per tenir en compte cicles
+                n_goals = len(data['goals'])
+                max_possible_avail[s] = max(
+                    (initial + max_inc) * (n_goals + 2),  # marge per cicles
+                    goal_t,
+                    max_op_val,
+                    1
+                )
 
         avail = {s: Fluent(f'available_{s}', IntType(0, max_possible_avail[s])) for s in substances}
         chosen = {s: Fluent(f'chosen_{s}', BoolType()) for s in choosable}
@@ -224,27 +297,22 @@ class PathwaysDomain(Domain):
 
             problem.add_action(a)
 
-        # Goal
-        m = re.search(
-            r'\(\+\s*\(\*\s*\(available_(\w+)\)[^)]*\)\s*\(\*\s*\(available_(\w+)\)',
-            data['goal_str']
-        )
-        if m:
-            s1, s2 = m.group(1).lower(), m.group(2).lower()
-            t = re.search(r'-([\d.]+)\s*\)\s*[\d.]+\s*\)', data['goal_str'])
-            threshold = int(float(t.group(1))) if t else 4
-            if s1 in avail and s2 in avail:
-                problem.add_goal(GE(Plus(avail[s1](), avail[s2]()), Int(threshold)))
-            elif s1 in avail:
-                problem.add_goal(GE(avail[s1](), Int(threshold)))
-        else:
-            goal_substs = [s.lower() for s in re.findall(r'\(available_(\w+)\)', data['goal_str'])]
-            t = re.search(r'-([\d.]+)', data['goal_str'])
-            threshold = int(float(t.group(1))) if t else 4
-            if len(goal_substs) >= 2 and goal_substs[0] in avail and goal_substs[1] in avail:
-                problem.add_goal(GE(Plus(avail[goal_substs[0]](), avail[goal_substs[1]]()), Int(threshold)))
-            elif len(goal_substs) == 1 and goal_substs[0] in avail:
-                problem.add_goal(GE(avail[goal_substs[0]](), Int(threshold)))
+        # Goal — itera sobre TOTS els goals parsejats
+        print(f"DEBUG goals parsed: {data['goals']}")  # opcional, per debugar
+        for goal_tuple in data['goals']:
+            s1, s2, threshold = goal_tuple
+            if s2 is not None:
+                # Goal de 2 substàncies: available_s1 + available_s2 >= threshold
+                if s1 in avail and s2 in avail:
+                    problem.add_goal(GE(Plus(avail[s1](), avail[s2]()), Int(threshold)))
+                elif s1 in avail:
+                    problem.add_goal(GE(avail[s1](), Int(threshold)))
+                elif s2 in avail:
+                    problem.add_goal(GE(avail[s2](), Int(threshold)))
+            else:
+                # Goal d'1 substància: available_s1 >= threshold
+                if s1 in avail:
+                    problem.add_goal(GE(avail[s1](), Int(threshold)))
 
         costs = {}
         for action_name, adata in action_data.items():
