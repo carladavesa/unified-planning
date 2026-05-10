@@ -5,7 +5,7 @@ from typing import Optional
 from unified_planning.model import Object
 from unified_planning.shortcuts import (
     Fluent, IntType, InstantaneousAction,
-    Problem, UserType, BoolType, GE, Plus, Times,
+    Problem, UserType, BoolType, GE,
 )
 from domains.base import Domain
 
@@ -134,47 +134,112 @@ class MysteryPrimeDomain(Domain):
         food_names = domain_data['food_names']
         person_names = domain_data['person_names']
 
-        foods = [Object(name, Food) for name in food_names]
-        persons = [Object(name, Person) for name in person_names]
-        problem.add_objects(foods + persons)
+        # Locale fluents: one fluent per food
+        locale_fluents = {}
 
-        food_objs = {o.name: o for o in foods}
-        person_objs = {o.name: o for o in persons}
+        # Conservative upper bound:
+        # total amount of all locale resources
+        total_locale = sum(data['locale'].values())
 
-        total_locale = sum(data['locale'].values()) if data['locale'] else 10
-        max_harmony = max(data['harmony'].values(), default=10)
+        for fname in food_names:
+            fl = Fluent(f'locale_{fname}', IntType(0, max(total_locale, 1)))
+            locale_fluents[fname] = fl
+            problem.add_fluent(fl, default_initial_value=0)
 
-        locale = Fluent('locale', IntType(0, total_locale), food=Food)
-        harmony = Fluent('harmony', IntType(0, max_harmony), person=Person)
+        # Harmony fluents: one fluent per person
+        harmony_fluents = {}
+
+        for pname in person_names:
+            init_h = data['harmony'].get(pname, 0)
+            # Harmony can only increase again after a decrease,
+            # so initial value is already a safe upper bound
+            ub = max(init_h, 1)
+            fl = Fluent(f'harmony_{pname}', IntType(0, ub))
+            harmony_fluents[pname] = fl
+            problem.add_fluent(fl, default_initial_value=0)
+
+        # Boolean fluents stay parametric
         craves = Fluent('craves', BoolType(), person=Person, food=Food)
         fears = Fluent('fears', BoolType(), person=Person, other=Person)
 
-        problem.add_fluent(locale, default_initial_value=0)
-        problem.add_fluent(harmony, default_initial_value=0)
         problem.add_fluent(craves, default_initial_value=False)
         problem.add_fluent(fears, default_initial_value=False)
 
         for fname, val in data['locale'].items():
-            problem.set_initial_value(locale(food_objs[fname]), val)
+            problem.set_initial_value(locale_fluents[fname](),val)
         for pname, val in data['harmony'].items():
-            problem.set_initial_value(harmony(person_objs[pname]), val)
+            problem.set_initial_value(harmony_fluents[pname](),val)
+
+        ######
+        foods = [Object(name, Food) for name in food_names]
+        persons = [Object(name, Person) for name in person_names]
+        problem.add_objects(foods + persons)
+        food_objs = {o.name: o for o in foods}
+        person_objs = {o.name: o for o in persons}
+        ## Tight bounds: locale is conserved by drink actions, so it cannot exceed
+        ## the initial total amount present in the instance. Harmony has no goal
+        ## directly tied to it, and in the handcrafted instances its initial max
+        ## is enough to represent all needed intermediate values.
+        #max_locale = max(data['locale'].values(), default=0)
+        #total_locale = sum(data['locale'].values())
+        #locale_ub = max(total_locale, max_locale, 1)
+        #max_harmony = max(data['harmony'].values(), default=0)
+        #harmony_ub = max(max_harmony, 1)
+
+        #locale = Fluent('locale', IntType(0, locale_ub), food=Food)
+        #harmony = Fluent('harmony', IntType(0, harmony_ub), person=Person)
+        #craves = Fluent('craves', BoolType(), person=Person, food=Food)
+        #fears = Fluent('fears', BoolType(), person=Person, other=Person)
+
+        #problem.add_fluent(locale, default_initial_value=0)
+        #problem.add_fluent(harmony, default_initial_value=0)
+        #problem.add_fluent(craves, default_initial_value=False)
+        #problem.add_fluent(fears, default_initial_value=False)
+
+        #for fname, val in data['locale'].items():
+        #    problem.set_initial_value(locale(food_objs[fname]), val)
+        #for pname, val in data['harmony'].items():
+        #    problem.set_initial_value(harmony(person_objs[pname]), val)
         for (p, f) in data['craves']:
             problem.set_initial_value(craves(person_objs[p], food_objs[f]), True)
         for (p1, p2) in data['fears']:
             problem.set_initial_value(fears(person_objs[p1], person_objs[p2]), True)
 
         # drink actions
+        #for (f1n, f2n) in domain_data['drink']:
+        #    if f1n == f2n:
+        #        continue
+        #    a = InstantaneousAction(f'drink_{f1n}_{f2n}')
+        #    f1o = food_objs[f1n]
+        #    f2o = food_objs[f2n]
+        #    a.add_precondition(GE(locale(f1o), 1))
+        #    a.add_decrease_effect(locale(f1o), 1)
+        #    a.add_increase_effect(locale(f2o), 1)
+        #    problem.add_action(a)
+        # drink actions
         for (f1n, f2n) in domain_data['drink']:
             if f1n == f2n:
                 continue
             a = InstantaneousAction(f'drink_{f1n}_{f2n}')
-            f1o = food_objs[f1n]
-            f2o = food_objs[f2n]
-            a.add_precondition(GE(locale(f1o), 1))
-            a.add_decrease_effect(locale(f1o), 1)
-            a.add_increase_effect(locale(f2o), 1)
+            a.add_precondition(GE(locale_fluents[f1n](), 1))
+            a.add_decrease_effect(locale_fluents[f1n](), 1)
+            a.add_increase_effect(locale_fluents[f2n](),  1)
             problem.add_action(a)
 
+        # feast actions
+        #for (pn, f1n, f2n) in domain_data['feast']:
+        #    if f1n == f2n:
+        #        continue
+        #    a = InstantaneousAction(f'feast_{pn}_{f1n}_{f2n}')
+        #    po = person_objs[pn]
+        #    f1o = food_objs[f1n]
+        #    f2o = food_objs[f2n]
+        #    a.add_precondition(craves(po, f1o))
+        #    a.add_precondition(GE(locale(f1o), 1))
+        #    a.add_decrease_effect(locale(f1o), 1)
+        #    a.add_effect(craves(po, f1o), False)
+        #    a.add_effect(craves(po, f2o), True)
+        #    problem.add_action(a)
         # feast actions
         for (pn, f1n, f2n) in domain_data['feast']:
             if f1n == f2n:
@@ -184,26 +249,51 @@ class MysteryPrimeDomain(Domain):
             f1o = food_objs[f1n]
             f2o = food_objs[f2n]
             a.add_precondition(craves(po, f1o))
-            a.add_precondition(GE(locale(f1o), 1))
-            a.add_decrease_effect(locale(f1o), 1)
-            a.add_effect(craves(po, f1o), False)
-            a.add_effect(craves(po, f2o), True)
+            a.add_precondition(GE(locale_fluents[f1n](), 1))
+            a.add_decrease_effect(locale_fluents[f1n](),1)
+            a.add_effect(craves(po, f1o),False)
+            a.add_effect(craves(po, f2o),True)
             problem.add_action(a)
 
+        # overcome actions
+        #for (dn, pn, fn) in domain_data['overcome']:
+        #    a = InstantaneousAction(f'overcome_{dn}_{pn}_{fn}')
+        #    do = person_objs[dn]
+        #    po = person_objs[pn]
+        #    fo = food_objs[fn]
+        #    a.add_precondition(GE(harmony(po), 1))
+        #    a.add_precondition(craves(do, fo))
+        #    a.add_precondition(craves(po, fo))
+        #    a.add_decrease_effect(harmony(po), 1)
+        #    a.add_effect(craves(do, fo), False)
+        #    a.add_effect(fears(do, po), True)
+        #    problem.add_action(a)
         # overcome actions
         for (dn, pn, fn) in domain_data['overcome']:
             a = InstantaneousAction(f'overcome_{dn}_{pn}_{fn}')
             do = person_objs[dn]
             po = person_objs[pn]
             fo = food_objs[fn]
-            a.add_precondition(GE(harmony(po), 1))
+            a.add_precondition(GE(harmony_fluents[pn](), 1))
             a.add_precondition(craves(do, fo))
             a.add_precondition(craves(po, fo))
-            a.add_decrease_effect(harmony(po), 1)
-            a.add_effect(craves(do, fo), False)
-            a.add_effect(fears(do, po), True)
+            a.add_decrease_effect(harmony_fluents[pn](),1)
+            a.add_effect(craves(do, fo),False)
+            a.add_effect(fears(do, po),True)
             problem.add_action(a)
 
+        # succumb actions
+        #for (dn, pn, fn) in domain_data['succumb']:
+        #    a = InstantaneousAction(f'succumb_{dn}_{pn}_{fn}')
+        #    do = person_objs[dn]
+        #    po = person_objs[pn]
+        #    fo = food_objs[fn]
+        #    a.add_precondition(craves(po, fo))
+        #    a.add_precondition(fears(do, po))
+        #    a.add_increase_effect(harmony(po), 1)
+        #    a.add_effect(fears(do, po), False)
+        #    a.add_effect(craves(do, fo), True)
+        #    problem.add_action(a)
         # succumb actions
         for (dn, pn, fn) in domain_data['succumb']:
             a = InstantaneousAction(f'succumb_{dn}_{pn}_{fn}')
@@ -212,9 +302,9 @@ class MysteryPrimeDomain(Domain):
             fo = food_objs[fn]
             a.add_precondition(craves(po, fo))
             a.add_precondition(fears(do, po))
-            a.add_increase_effect(harmony(po), 1)
-            a.add_effect(fears(do, po), False)
-            a.add_effect(craves(do, fo), True)
+            a.add_increase_effect(harmony_fluents[pn](),1)
+            a.add_effect(fears(do, po),False)
+            a.add_effect(craves(do, fo),True)
             problem.add_action(a)
 
         for (p, f) in data['goal_craves']:
