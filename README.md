@@ -1,15 +1,15 @@
-# Unified Planning ++
+# CARLA: Compiling Abstractions for Richer Languages in Automated planning
 
-> **Note:** This repository is a fork of the [Unified Planning (UP)](https://github.com/aiplan4eu/unified-planning) 
-> framework, extended with high-level constructs: 
-> arrays, sets, bounded integer parameters in actions, integer range variables, and Boolean counting expressions,
-> along with automated compilation to PDDL.
-> 
+> **Note:** This repository is a fork of the [Unified Planning (UP)](https://github.com/aiplan4eu/unified-planning) framework.
+> CARLA extends the UP framework with high-level modelling constructs - arrays, sets, bounded integer parameters in actions, integer range variables, and Boolean counting expressions - along with a pipeline of composable compilers for automated compilation to PDDL.
 > For the original Unified Planning framework documentation, please see [README_UP_ORIGINAL.md](README_UP_ORIGINAL.md).
 
-This directory contains the source code, compilers, and benchmark domains required to reproduce the experiments for 
-our paper *"Compiling Expressive Planning with Data Types"* accepted at ICAPS2026. 
-A link to the official publication will be added here soon.
+## Publication
+
+This repository contains the source code, compilers, and benchmark domains required to reproduce the experiments for 
+our paper:
+> *"Compiling Expressive Planning with Data Types"*, accepted at ICAPS2026. 
+A link to the official publication will be added soon.
 
 ## Table of Contents
 
