@@ -97,6 +97,17 @@ message TypeDeclaration {
     // If set, the parent type must have been previously declared (i.e. should appear earlier in the problem's type declarations.
     // feature: HIERARCHICAL_TYPING
     string parent_type = 2;
+
+    // Extension: structural information for composite types.
+    // These fields are only meaningful when type_name is "up:array" or "up:set".
+
+    // For ArrayType and SetType: proto_type() string of the element type.
+    // e.g. "Color" for an array/set of Color objects, "up:integer[0,2]" for bounded ints.
+    string element_type = 3;
+
+    // For ArrayType only: number of elements in the array dimension.
+    // Zero means this field is not set (proto3 default).
+    int32 size = 4;
 }
 
 // Parameter of a fluent or of an action
@@ -598,6 +609,7 @@ message Problem {
 // Features of the problem.
 // Features are essential in that not supporting a feature `X` should allow disregarding any field tagged with `features: [X]`.
 enum Feature {
+    option allow_alias = true;
     // PROBLEM_CLASS
     ACTION_BASED = 0;
     HIERARCHICAL = 26;
@@ -650,6 +662,9 @@ enum Feature {
     INT_FLUENTS = 60;
     REAL_FLUENTS = 61;
     ARRAY_FLUENTS = 68;
+    SET_FLUENTS = 72;
+    // CONDITIONS_KIND (set)
+    MEMBERING = 73;
     // PARAMETERS
     BOOL_FLUENT_PARAMETERS = 50;
     BOUNDED_INT_FLUENT_PARAMETERS = 51;

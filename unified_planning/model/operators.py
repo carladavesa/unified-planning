@@ -40,6 +40,8 @@ class OperatorKind(Enum):
     INT_CONSTANT = auto()
     REAL_CONSTANT = auto()
     ARRAY_CONSTANT = auto()
+    ARRAY_READ = auto()
+    ARRAY_WRITE = auto()
     SET_CONSTANT = auto()
     PLUS = auto()
     MINUS = auto()

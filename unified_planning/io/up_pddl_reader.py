@@ -114,7 +114,7 @@ def nested_expr():
 
 class PDDLGrammar:
     def __init__(self):
-        name = Word(alphas, alphanums + "_" + "-")
+        name = Word(alphas, alphanums + "_" + "-" + ".")
         variable = Suppress("?") + name
 
         require_def = (
@@ -122,18 +122,28 @@ class PDDLGrammar:
             + ":requirements"
             + OneOrMore(
                 one_of(
-                    ":strips :typing :negative-preconditions :disjunctive-preconditions :equality :existential-preconditions :universal-preconditions :quantified-preconditions :conditional-effects :fluents :numeric-fluents :object-fluents :adl :durative-actions :duration-inequalities :timed-initial-literals :timed-initial-effects :action-costs :hierarchy :method-preconditions :constraints :contingent :preferences :time :continuous-effects"
+                    ":strips :typing :negative-preconditions :disjunctive-preconditions :equality :existential-preconditions :universal-preconditions :quantified-preconditions :conditional-effects :fluents :numeric-fluents :object-fluents :adl :durative-actions :duration-inequalities :timed-initial-literals :timed-initial-effects :action-costs :hierarchy :method-preconditions :constraints :contingent :preferences :time :continuous-effects :arrays :sets :bounded-integers"
                 )
             )
             + Suppress(")")
         )
+
+        type_constructor = (
+            # (number lo hi)
+            Group(Keyword("number") + Word(pyparsing.nums) + Word(pyparsing.nums))
+            # (array rows cols elem_type)
+            | Group(Keyword("array") + OneOrMore((name | Word(pyparsing.nums))))
+            # (set elem_type)
+            | Group(Keyword("set") + name)
+        )
+        type_parent = Group(Suppress("(") + type_constructor + Suppress(")")) | name
 
         types_def = (
             Suppress("(")
             + ":types"
             - set_results_name(
                 OneOrMore(
-                    Group(Group(OneOrMore(name)) + Optional(Suppress("-") + name))
+                    Group(Group(OneOrMore(name)) + Optional(Suppress("-") + type_parent))
                 ),
                 "types",
             )
@@ -154,6 +164,7 @@ class PDDLGrammar:
             + Suppress(")")
         )
 
+        # (name variable - name)
         predicate = (
             Suppress("(")
             + Group(
@@ -430,6 +441,55 @@ class UPPDDLReader:
         self._fve = self._env.free_vars_extractor
         self._totalcost: typing.Optional[up.model.FNode] = None
 
+    def _parse_quantifier_vars(
+        self,
+        exp_vars: "CustomParseResults",
+        act: typing.Optional[up.model.Transition],
+        types_map: "TypesMap",
+    ) -> Dict[str, typing.Union[up.model.Variable, "up.model.RangeVariable"]]:
+        """Parse forall/exists variable declarations, supporting inline (number lo hi) range types."""
+        result: Dict[str, typing.Union[up.model.Variable, "up.model.RangeVariable"]] = {}
+        i = 0
+        n = len(exp_vars)
+        while i < n:
+            var_names = []
+            while i < n:
+                tok = exp_vars[i]
+                if isinstance(tok.value, str) and tok.value.startswith("?"):
+                    var_names.append(tok.value[1:])
+                    i += 1
+                elif isinstance(tok.value, str) and tok.value == "-":
+                    i += 1
+                    break
+                else:
+                    i += 1
+            if not var_names:
+                break
+            if i >= n:
+                for o in var_names:
+                    result[o] = up.model.Variable(o, types_map[Object], self._env)
+                break
+            type_tok = exp_vars[i]
+            i += 1
+            if isinstance(type_tok.value, str):
+                t = types_map[type_tok.value]
+                for o in var_names:
+                    if t.is_int_type() and t.lower_bound is not None and t.upper_bound is not None:
+                        result[o] = up.model.RangeVariable(o, t.lower_bound, t.upper_bound, self._env)
+                    else:
+                        result[o] = up.model.Variable(o, t, self._env)
+            else:
+                # Inline (number lo hi) — bounds may be integer literals or ?param references.
+                if type_tok[0].value != "number":
+                    raise SyntaxError(f"Unsupported inline quantifier type: ({type_tok[0].value} ...)")
+                def _bound(s):
+                    return act.parameter(s[1:]) if s.startswith("?") else int(s)
+                lo = _bound(type_tok[1].value)
+                hi = _bound(type_tok[2].value)
+                for o in var_names:
+                    result[o] = up.model.RangeVariable(o, lo, hi, self._env)
+        return result
+
     def _parse_exp(
         self,
         problem: up.model.Problem,
@@ -454,6 +514,9 @@ class UPPDDLReader:
                         self._em.Exists if exp[0].value == "exists" else self._em.Forall
                     )
                     solved.append(q_op(solved.pop(), *var.values()))
+                elif exp[0].value == "count":
+                    args = [solved.pop() for _ in range(1, len(exp))]
+                    solved.append(self._em.Count(args))
                 elif (
                     exp[0].value in self._trajectory_constraints
                 ):  # trajectory_constraints reference
@@ -475,6 +538,52 @@ class UPPDDLReader:
                             repr(e)
                             + f"\nError from line: {start_line}, col {start_col} to line: {end_line}, col {end_col}"
                         )
+                elif exp[0].value == "read":
+                    n_children = len(exp) - 1
+                    args = [solved.pop() for _ in range(n_children)]
+                    base_exp = args[0]  # resolved FluentExp of the array fluent
+                    if len(args) == 1:
+                        # Fluent read: (read (top ?p))
+                        solved.append(base_exp)
+                    else:
+                        # Array read: chain one ArrayRead per index
+                        # (read (board ?a) ?i ?j) → ArrayRead(ArrayRead(board(a), i), j)
+                        result = base_exp
+                        for idx in args[1:]:
+                            if not result.type.is_array_type():
+                                raise SyntaxError(
+                                    f"'read' has more indices than array dimensions: "
+                                    f"'{result}' has type '{result.type}', which is not an array"
+                                )
+                            result = self._em.ArrayRead(result, idx)
+                        solved.append(result)
+                elif exp[0].value == "member":
+                    element = solved.pop()
+                    set_expr = solved.pop()
+                    solved.append(self._em.SetMember(element, set_expr))
+                elif exp[0].value == "subset":
+                    set1 = solved.pop()
+                    set2 = solved.pop()
+                    solved.append(self._em.SetSubseteq(set1, set2))
+                elif exp[0].value == "disjoint":
+                    set1 = solved.pop()
+                    set2 = solved.pop()
+                    solved.append(self._em.SetDisjoint(set1, set2))
+                elif exp[0].value == "cardinality":
+                    set_expr = solved.pop()
+                    solved.append(self._em.SetCardinality(set_expr))
+                elif exp[0].value == "union":
+                    set1 = solved.pop()
+                    set2 = solved.pop()
+                    solved.append(self._em.SetUnion(set1, set2))
+                elif exp[0].value == "intersect":
+                    set1 = solved.pop()
+                    set2 = solved.pop()
+                    solved.append(self._em.SetIntersection(set1, set2))
+                elif exp[0].value == "difference":
+                    set1 = solved.pop()
+                    set2 = solved.pop()
+                    solved.append(self._em.SetDifference(set1, set2))
                 else:
                     start_line, start_col = exp.line_start(complete_str), exp.col_start(
                         complete_str
@@ -497,27 +606,7 @@ class UPPDDLReader:
                         for i in range(1, len(exp)):
                             stack.append((var, exp[i], False))
                     elif exp[0].value in ["exists", "forall"]:  # quantifier operators
-                        vars_string = " ".join([e.value for e in exp[1]])
-                        vars_res = self._pp_parameters.parseString(vars_string)
-                        new_vars = {}
-                        for g in vars_res["params"]:
-                            try:
-                                t = types_map[
-                                    g.value[1] if len(g.value) > 1 else Object
-                                ]
-                            except KeyError:
-                                g_start_line, g_start_col = lineno(
-                                    g.locn_start, complete_str
-                                ), col(g.locn_start, complete_str)
-                                g_end_line, g_end_col = lineno(
-                                    g.locn_end, complete_str
-                                ), col(g.locn_end, complete_str)
-                                raise SyntaxError(
-                                    f"Undefined variable's type: {g[1]}."
-                                    + f"\nError from line: {g_start_line}, col: {g_start_col} to line: {g_end_line}, col: {g_end_col}."
-                                )
-                            for o in g.value[0]:
-                                new_vars[o] = up.model.Variable(o, t, self._env)
+                        new_vars = self._parse_quantifier_vars(exp[1], act, types_map)
                         # new_vars are the variables defined by the quantifier currently being solved
                         # all_vars are the variables defined by all the quantifiers around this expression
                         stack.append((new_vars, exp, True))
@@ -531,6 +620,46 @@ class UPPDDLReader:
                         for i in range(1, len(exp)):
                             stack.append((var, exp[i], False))
                     elif problem.has_fluent(exp[0].value):  # fluent reference
+                        stack.append((var, exp, True))
+                        for i in range(1, len(exp)):
+                            stack.append((var, exp[i], False))
+                    elif exp[0].value == "array.mk":
+                        def _parse_array_content(group):
+                            if len(group) == 0:
+                                return []
+                            if isinstance(group[0].value, ParseResults):
+                                return [_parse_array_content(group[k]) for k in range(len(group))]
+                            return [int(group[k].value) for k in range(len(group))]
+                        if len(exp) == 2:
+                            # (array.mk (e1 e2 ...)) or (array.mk ((row0) (row1) ...))
+                            elements = _parse_array_content(exp[1])
+                        else:
+                            # (array.mk row0 row1 ...) — multiple top-level groups
+                            elements = [_parse_array_content(exp[k]) for k in range(1, len(exp))]
+                        solved.append(self._em.Array(elements))
+                    elif exp[0].value == "set.mk":
+                        elements = set()
+                        if len(exp) > 1:
+                            elems_group = exp[1]
+                            for i in range(len(elems_group)):
+                                token = elems_group[i].value
+                                if isinstance(token, str) and problem.has_object(token):
+                                    elements.add(self._em.ObjectExp(problem.object(token)))
+                                else:
+                                    elements.add(int(token))
+                        solved.append(self._em.Set(elements))
+                    elif exp[0].value in (
+                        "member", "subset", "disjoint",
+                        "union", "intersect", "difference", "cardinality",
+                    ):
+                        stack.append((var, exp, True))
+                        for i in range(1, len(exp)):
+                            stack.append((var, exp[i], False))
+                    elif exp[0].value == "read":
+                        stack.append((var, exp, True))
+                        for i in range(1, len(exp)):
+                            stack.append((var, exp[i], False))
+                    elif exp[0].value == "count":
                         stack.append((var, exp, True))
                         for i in range(1, len(exp)):
                             stack.append((var, exp[i], False))
@@ -568,6 +697,10 @@ class UPPDDLReader:
                                 f"Undefined name found: {exp.value[1:]}.\nError in expression from"
                                 + f" line: {start_line}, col {start_col} to line: {end_line}, col {end_col}"
                             )
+                    elif exp.value == "array.empty":
+                        solved.append(self._em.Array([]))
+                    elif exp.value == "set.empty":
+                        solved.append(self._em.EMPTY_SET())
                     elif problem.has_fluent(exp.value):  # fluent
                         solved.append(self._em.FluentExp(problem.fluent(exp.value)))
                     elif problem.has_object(exp.value):  # object
@@ -662,6 +795,87 @@ class UPPDDLReader:
                     cond,
                 )
                 act.add_effect(*eff if timing is None else (timing, *eff), forall=tuple(forall_variables.values()))  # type: ignore
+            elif op == "write":
+                # Three syntaxes:
+                #   scalar:  (write (top ?p) val)              — 3 tokens, plain fluent assignment
+                #   1D array:(write (tower ?p) (?r) val)       — 4 tokens, array element assignment
+                #   N-D array:(write ((board ?a) ?i ?j) val)   — 3 tokens, nested target
+                if len(exp) == 4:
+                    # 1D array write: (write (array-fluent) (index) value)
+                    array_node = self._parse_exp(
+                        problem, act, types_map, forall_variables, exp[1], complete_str
+                    )
+                    if not array_node.type.is_array_type():
+                        raise SyntaxError(
+                            f"Array write target '{array_node}' has type '{array_node.type}', "
+                            f"expected an array type"
+                        )
+                    index_node = self._parse_exp(
+                        problem, act, types_map, forall_variables, exp[2], complete_str
+                    )
+                    value_node = self._parse_exp(
+                        problem, act, types_map, forall_variables, exp[3], complete_str
+                    )
+                    target_node = self._em.ArrayWrite(array_node, index_node)
+                elif len(exp) == 3 and isinstance(exp[1][0].value, ParseResults):
+                    # N-D array write: (write ((array-fluent args) i1 ... iN) value)
+                    # exp[1] = ((array-fluent args) i1 ... iN), exp[2] = value
+                    target_seq = exp[1]
+                    n_indices = len(target_seq) - 1
+                    value_node = self._parse_exp(
+                        problem, act, types_map, forall_variables, exp[2], complete_str
+                    )
+                    node = self._parse_exp(
+                        problem, act, types_map, forall_variables, target_seq[0], complete_str
+                    )
+                    # Chain (n_indices - 1) intermediate ArrayReads, then one ArrayWrite
+                    for k in range(1, n_indices):
+                        idx = self._parse_exp(
+                            problem, act, types_map, forall_variables, target_seq[k], complete_str
+                        )
+                        if not node.type.is_array_type():
+                            raise SyntaxError(
+                                f"'write' has more indices than array dimensions on '{node}'"
+                            )
+                        node = self._em.ArrayRead(node, idx)
+                    last_idx = self._parse_exp(
+                        problem, act, types_map, forall_variables, target_seq[n_indices], complete_str
+                    )
+                    if not node.type.is_array_type():
+                        raise SyntaxError(
+                            f"'write' target '{node}' is not an array type"
+                        )
+                    target_node = self._em.ArrayWrite(node, last_idx)
+                else:
+                    # Scalar write: (write (top ?p) val) — equivalent to assign
+                    target_node = self._parse_exp(
+                        problem, act, types_map, forall_variables, exp[1], complete_str
+                    )
+                    value_node = self._parse_exp(
+                        problem, act, types_map, forall_variables, exp[2], complete_str
+                    )
+                eff = (target_node, value_node, cond)
+                act.add_effect(*eff if timing is None else (timing, *eff),
+                               forall=tuple(forall_variables.values()))  # type: ignore
+
+            elif op in ("add", "remove"):
+                # Set mutation effects:
+                #   (add ?elem myset)    → myset := SetAdd(?elem, myset)
+                #   (remove ?elem myset) → myset := SetRemove(?elem, myset)
+                element_node = self._parse_exp(
+                    problem, act, types_map, forall_variables, exp[1], complete_str
+                )
+                set_node = self._parse_exp(
+                    problem, act, types_map, forall_variables, exp[2], complete_str
+                )
+                if op == "add":
+                    value_node = self._em.SetAdd(element_node, set_node)
+                else:
+                    value_node = self._em.SetRemove(element_node, set_node)
+                eff = (set_node, value_node, cond)
+                act.add_effect(*eff if timing is None else (timing, *eff),
+                               forall=tuple(forall_variables.values()))  # type: ignore
+
             elif op == "increase":
                 if "#t" in exp:
                     if not (
@@ -910,12 +1124,7 @@ class UPPDDLReader:
                         "Nested forall on effects are not supported."
                     )
                 forall_variables = forall_variables.copy()
-                vars_string = " ".join([e.value for e in exp[1]])
-                vars_res = self._pp_parameters.parseString(vars_string)
-                for g in vars_res["params"]:
-                    t = types_map[g.value[1] if len(g.value) > 1 else Object]
-                    for o in g.value[0]:
-                        forall_variables[o] = up.model.Variable(o, t)
+                forall_variables.update(self._parse_quantifier_vars(exp[1], act, types_map))
                 to_add.append((exp[2], cond, forall_variables))
             else:
                 eff = (
@@ -946,26 +1155,9 @@ class UPPDDLReader:
                 for i in range(1, len(exp)):
                     to_add.append((exp[i], vars))
             elif op == "forall":
-                vars_string = " ".join([e.value for e in exp[1]])
-                vars_res = self._pp_parameters.parseString(vars_string)
                 if vars is None:
                     vars = {}
-                for g in vars_res["params"]:
-                    try:
-                        t = types_map[g.value[1] if len(g.value) > 1 else Object]
-                    except KeyError:
-                        g_start_line, g_start_col = lineno(
-                            g.locn_start, complete_str
-                        ), col(g.locn_start, complete_str)
-                        g_end_line, g_end_col = lineno(g.locn_end, complete_str), col(
-                            g.locn_end, complete_str
-                        )
-                        raise SyntaxError(
-                            f"Undefined variable's type: {g[1]}."
-                            + f"\nError from line: {g_start_line}, col: {g_start_col} to line: {g_end_line}, col: {g_end_col}."
-                        )
-                    for o in g.value[0]:
-                        vars[o] = up.model.Variable(o, t, self._env)
+                vars.update(self._parse_quantifier_vars(exp[1], act, types_map))
                 to_add.append((exp[2], vars))
             elif len(exp) == 3 and op == "at" and exp[1].value == "start":
                 cond = self._parse_exp(
@@ -1148,12 +1340,7 @@ class UPPDDLReader:
                         "Nested forall on effects are not supported."
                     )
                 forall_variables = forall_variables.copy()
-                vars_string = " ".join([e.value for e in eff[1]])
-                vars_res = self._pp_parameters.parseString(vars_string)
-                for g in vars_res["params"]:
-                    t = types_map[g.value[1] if len(g.value) > 1 else Object]
-                    for o in g.value[0]:
-                        forall_variables[o] = up.model.Variable(o, t)
+                forall_variables.update(self._parse_quantifier_vars(eff[1], act, types_map))
                 to_add.append((eff[2], forall_variables))
             else:
                 start_line, start_col = eff.line_start(complete_str), eff.col_start(
@@ -1375,19 +1562,36 @@ class UPPDDLReader:
 
         # extract all type declarations into a dictionary
         type_declarations: Dict[str, typing.Optional[str]] = {}
+        compound_declarations: list = []  # (name, constructor
+
         for type_line in domain_res.get("types", []):
-            father_name = None if len(type_line) <= 1 else str(type_line[1])
-            if father_name is None and object_type_needed:
-                father_name = Object
+            if len(type_line) <= 1:
+                raw_parent = None
+            else:
+                raw_parent = type_line[1]
+
             for declared_type in type_line[0]:
                 declared_type = str(declared_type)
-                if declared_type in type_declarations:
-                    raise SyntaxError(
-                        f"Type {declared_type} is declared more than once"
-                    )
-                if declared_type == Object:
-                    father_name = None
-                type_declarations[declared_type] = father_name
+                if isinstance(raw_parent, str) or raw_parent is None:
+                    # Default case, as always
+                    father_name = raw_parent
+                    # Type declared without parent, parent is object
+                    if father_name is None and object_type_needed:
+                        father_name = Object
+                    # Type declared with object as parent
+                    if declared_type == Object:
+                        father_name = None
+
+                    if declared_type in type_declarations:
+                        raise SyntaxError(
+                            f"Type {declared_type} is declared more than once"
+                        )
+                    type_declarations[declared_type] = father_name
+                else:
+                    # Compound parent: raw_parent is the type_parent Group
+                    # raw_parent[0] is the type constructor Group
+                    constructor = raw_parent[0]
+                    compound_declarations.append((declared_type, constructor))
 
         # Processes a type and adds it to the `types_map`.
         # If the father was not previously declared, it will be recursively declared as well.
@@ -1425,10 +1629,41 @@ class UPPDDLReader:
         for declared_type, father_name in type_declarations.items():
             declare_type(declared_type, father_name)
 
+        # Now resolve compound types in declaration order
+        # (element types must appear before array/set types that reference them)
+        for declared_type, constructor in compound_declarations:
+            kind = str(constructor[0])
+            if kind == "number":
+                lo = int(str(constructor[1]))
+                hi = int(str(constructor[2]))
+                types_map[declared_type] = self._tm.IntType(lo, hi)
+            elif kind == "array":
+                elem_name = str(constructor[-1])
+                if elem_name not in types_map:
+                    raise SyntaxError(
+                        f"Array element type '{elem_name}' used before it is declared"
+                    )
+                sizes = [int(str(constructor[i])) for i in range(1, len(constructor) - 1)]
+                # Build from the inside out: last dimension wraps the element type first
+                array_type = types_map[elem_name]
+                for size in reversed(sizes):
+                    array_type = self._tm.ArrayType(size, array_type)
+                types_map[declared_type] = array_type
+            elif kind == "set":
+                elem_name = str(constructor[1])
+                if elem_name not in types_map:
+                    raise SyntaxError(
+                        f"Set element type '{elem_name}' used before it is declared"
+                    )
+                types_map[declared_type] = self._tm.SetType(types_map[elem_name])
+            else:
+                raise SyntaxError(f"Unknown type constructor: {kind}")
+
         if object_type_needed and Object not in types_map:
             # The object type is needed, but has not been defined explicitly. We manually define it
             types_map[Object] = self._env.type_manager.UserType("object", None)
 
+        print(f"\n\n  {types_map}\n")
         has_actions_cost = False
 
         for p in domain_res.get("predicates", []):
@@ -1486,6 +1721,7 @@ class UPPDDLReader:
                             + f"is defined twice.\nError from line: {g_start_line}, col: {g_start_col}"
                             + f" to line: {g_end_line}, col: {g_end_col}."
                         )
+
             # Determine return type: object type if annotated, else RealType
             if len(p) > 1:
                 ret_type_name = str(p[1])
@@ -1500,10 +1736,14 @@ class UPPDDLReader:
             else:
                 fluent_type = self._tm.RealType()
             f = up.model.Fluent(n, fluent_type, params, self._env)
+
             if n == "total-cost":
                 has_actions_cost = True
                 self._totalcost = cast(up.model.FNode, self._em.FluentExp(f))
-            problem.add_fluent(f)
+            if fluent_type.is_set_type():
+                problem.add_fluent(f, default_initial_value=self._em.EMPTY_SET())
+            else:
+                problem.add_fluent(f)
 
         for g in domain_res.get("constants", []):
             try:
@@ -1875,14 +2115,59 @@ class UPPDDLReader:
                 init = CustomParseResults(j)
                 operator = init[0].value
                 if operator == "=":
-                    problem.set_initial_value(
-                        self._parse_exp(
-                            problem, None, types_map, {}, init[1], problem_str
-                        ),
-                        self._parse_exp(
-                            problem, None, types_map, {}, init[2], problem_str
-                        ),
+                    rhs = init[2]
+                    _rhs_is_constructor = (
+                        isinstance(rhs.value, ParseResults)
+                        and len(rhs) > 0
+                        and rhs[0].value in ("array.mk", "set.mk")
                     )
+                    _rhs_is_empty = (
+                        isinstance(rhs.value, str)
+                        and rhs.value in ("array.empty", "set.empty")
+                    )
+                    if _rhs_is_constructor or _rhs_is_empty:
+                        lhs = self._parse_exp(problem, None, types_map, {}, init[1], problem_str)
+                        if _rhs_is_empty:
+                            value = [] if rhs.value == "array.empty" else set()
+                        elif rhs[0].value == "array.mk":
+                            def _parse_array_mk(group):
+                                """Recursively parse array.mk content group."""
+                                if len(group) == 0:
+                                    return []
+                                if isinstance(group[0].value, ParseResults):
+                                    return [_parse_array_mk(group[k]) for k in range(len(group))]
+                                result = []
+                                for k in range(len(group)):
+                                    token = group[k].value
+                                    if isinstance(token, str) and problem.has_object(token):
+                                        result.append(problem.object(token))
+                                    else:
+                                        result.append(int(token))
+                                return result
+                            if len(rhs) == 2:
+                                value = _parse_array_mk(rhs[1])
+                            else:
+                                value = [_parse_array_mk(rhs[k]) for k in range(1, len(rhs))]
+                        else:  # set.mk
+                            elems_group = rhs[1]
+                            elements = set()
+                            for i in range(len(elems_group)):
+                                token = elems_group[i].value
+                                if isinstance(token, str) and problem.has_object(token):
+                                    elements.add(problem.object(token))
+                                else:
+                                    elements.add(int(token))
+                            value = elements
+                        problem.set_initial_value(lhs, value)
+                    else:
+                        problem.set_initial_value(
+                            self._parse_exp(
+                                problem, None, types_map, {}, init[1], problem_str
+                            ),
+                            self._parse_exp(
+                                problem, None, types_map, {}, init[2], problem_str
+                            ),
+                        )
                 elif (
                     len(init) == 3
                     and operator == "at"

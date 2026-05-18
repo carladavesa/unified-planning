@@ -41,11 +41,26 @@ from unified_planning.model.htn.hierarchical_problem import HierarchicalProblem
 
 
 def convert_type_str(s: str, problem: Problem) -> model.types.Type:
-    if s == "up:bool":
+    # Composite types must be checked before the "up:integer[" / "up:real[" cases
+    # because their type strings may *contain* those substrings as element types.
+    if s.startswith("up:array["):
+        # Format: "up:array[<size>,<elem_type_str>]"
+        inner = s[len("up:array["):-1]       # strip prefix and trailing "]"
+        comma = inner.index(",")
+        size = int(inner[:comma])
+        elem_str = inner[comma + 1:]
+        elem_type = convert_type_str(elem_str, problem)
+        return problem.environment.type_manager.ArrayType(size, elem_type)
+    elif s.startswith("up:set{"):
+        # Format: "up:set{<elem_type_str>}"  or "up:set{}" for empty/untyped
+        inner = s[len("up:set{"):-1]          # strip prefix and trailing "}"
+        elem_type = convert_type_str(inner, problem) if inner else None
+        return problem.environment.type_manager.SetType(elem_type)
+    elif s == "up:bool":
         return problem.environment.type_manager.BoolType()
     elif s == "up:integer":
         return problem.environment.type_manager.IntType()
-    elif "up:integer[" in s:
+    elif s.startswith("up:integer["):
         str_lb = s.split("[")[1].split(",")[0]
         lb = None if "-inf" in str_lb else int(str_lb)
         str_ub = s.split(",")[1].split("]")[0]
@@ -53,15 +68,11 @@ def convert_type_str(s: str, problem: Problem) -> model.types.Type:
         return problem.environment.type_manager.IntType(lb, ub)
     elif s == "up:real":
         return problem.environment.type_manager.RealType()
-    elif "up:real[" in s:
+    elif s.startswith("up:real["):
         return problem.environment.type_manager.RealType(
             lower_bound=fractions.Fraction(s.split("[")[1].split(",")[0]),
             upper_bound=fractions.Fraction(s.split(",")[1].split("]")[0]),
         )
-    elif s == "up:array":
-        return problem.environment.type_manager.ArrayType()
-    elif s == "up:set":
-        return problem.environment.type_manager.SetType()
     else:
         assert not s.startswith("up:"), f"Unhandled builtin type: {s}"
         return problem.user_type(s)
@@ -111,6 +122,30 @@ def op_to_node_type(op: str) -> OperatorKind:
         return OperatorKind.SOMETIME_BEFORE
     elif op == "up:present":
         return OperatorKind.PRESENT_EXP
+    # --- Extension: array operators ---
+    elif op == "up:array_read":
+        return OperatorKind.ARRAY_READ
+    elif op == "up:array_write":
+        return OperatorKind.ARRAY_WRITE
+    # --- Extension: set operators (routed through walk_operator) ---
+    elif op == "up:set_member":
+        return OperatorKind.SET_MEMBER
+    elif op == "up:set_subseteq":
+        return OperatorKind.SET_SUBSETEQ
+    elif op == "up:set_disjoint":
+        return OperatorKind.SET_DISJOINT
+    elif op == "up:set_cardinality":
+        return OperatorKind.SET_CARDINALITY
+    elif op == "up:set_add":
+        return OperatorKind.SET_ADD
+    elif op == "up:set_remove":
+        return OperatorKind.SET_REMOVE
+    elif op == "up:set_union":
+        return OperatorKind.SET_UNION
+    elif op == "up:set_intersect":
+        return OperatorKind.SET_INTERSECT
+    elif op == "up:set_difference":
+        return OperatorKind.SET_DIFFERENCE
     raise ValueError(f"Unknown operator `{op}`")
 
 
@@ -182,6 +217,19 @@ class ProtobufReader(Converter):
                 )
             else:
                 raise UPException(f"Unable to form fluent expression {msg}")
+        elif (
+            msg.kind == proto.ExpressionKind.Value("FUNCTION_APPLICATION")
+            and len(msg.list) > 0
+            and msg.list[0].atom.symbol == "up:set_constant"
+        ):
+            # SET_CONSTANT: elements are encoded as FUNCTION_APPLICATION args.
+            # Reconstruct via create_node so elements go into payload (not args).
+            elements = tuple(self.convert(m, problem) for m in msg.list[1:])
+            return problem.environment.expression_manager.create_node(
+                node_type=OperatorKind.SET_CONSTANT,
+                args=tuple(),
+                payload=elements,
+            )
         elif (
             msg.kind == proto.ExpressionKind.Value("FUNCTION_APPLICATION")
             and msg.list[0].atom.symbol == "up:present"
@@ -310,6 +358,15 @@ class ProtobufReader(Converter):
             return problem.environment.type_manager.RealType(
                 lower_bound=lower_bound, upper_bound=upper_bound
             )
+        elif msg.type_name.startswith("up:array["):
+            # Use element_type and size fields from the TypeDeclaration.
+            elem_type = convert_type_str(msg.element_type, problem)
+            return problem.environment.type_manager.ArrayType(msg.size, elem_type)
+        elif msg.type_name.startswith("up:set{"):
+            elem_type = (
+                convert_type_str(msg.element_type, problem) if msg.element_type else None
+            )
+            return problem.environment.type_manager.SetType(elem_type)
         else:
             father = (
                 problem.user_type(msg.parent_type) if msg.parent_type != "" else None
@@ -333,6 +390,11 @@ class ProtobufReader(Converter):
             problem = Problem(name=problem_name, environment=environment)
 
         for t in msg.types:
+            # Composite types (array/set) are reconstructed on-the-fly by
+            # convert_type_str; they are not user-defined types and must not
+            # be registered via _add_user_type (which asserts is_user_type()).
+            if t.type_name.startswith("up:array[") or t.type_name.startswith("up:set{"):
+                continue
             problem._add_user_type(self.convert(t, problem))
         for obj in msg.objects:
             problem.add_object(self.convert(obj, problem))
@@ -398,6 +460,8 @@ class ProtobufReader(Converter):
             problem.add_variable(var.name, var.type)
 
         for t in msg.types:
+            if t.type_name.startswith("up:array[") or t.type_name.startswith("up:set{"):
+                continue
             problem._add_user_type(self.convert(t, problem))
         for obj in msg.objects:
             problem.add_object(self.convert(obj, problem))

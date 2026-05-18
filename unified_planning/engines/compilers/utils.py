@@ -487,12 +487,18 @@ def _apply_function_to_effect(
     effect: Effect, function: Callable[[FNode], FNode]
 ) -> Effect:
     auto_promote = effect.environment.expression_manager.auto_promote
+
+    def _extract_var(exp):
+        if exp.is_range_variable_exp():
+            return exp.range_variable()
+        return exp.variable()
+
     return Effect(
         function(effect.fluent),
         function(effect.value),
         function(effect.condition),
         effect.kind,
-        tuple((exp.variable() for exp in auto_promote(effect.forall))),
+        tuple((_extract_var(exp) for exp in auto_promote(effect.forall))),
     )
 
 

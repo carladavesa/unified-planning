@@ -284,6 +284,12 @@ class ExpressionManager(object):
         array_expr, index = self.auto_promote(array_expr, index)
         return self.create_node(node_type=OperatorKind.ARRAY_INDEX, args=(array_expr, index))
 
+    def ArrayRead(self, array_exp, index_exp):
+        return self.create_node(OperatorKind.ARRAY_READ, (array_exp, index_exp))
+
+    def ArrayWrite(self, array_exp, index_exp):
+        return self.create_node(OperatorKind.ARRAY_WRITE, (array_exp, index_exp))
+
     def SetMember(
         self, element: Expression, set_expr: SetExpression
     ) -> "up.model.fnode.FNode":

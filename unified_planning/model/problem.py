@@ -338,12 +338,19 @@ class Problem(  # type: ignore[misc]
         remove_used_fluents = lambda *exps: unused_fluents.difference_update(
             (f.fluent() for e in exps for f in fve.get(e))
         )
+        # For an effect node, get the underlying Fluent object being modified.
+        # ARRAY_WRITE(arr, idx) targets arr, which may itself be ARRAY_READ (ND write).
+        def _effect_fluent(f_node: "up.model.fnode.FNode") -> "up.model.fluent.Fluent":
+            current = f_node
+            while current.is_array_write() or current.is_array_read():
+                current = current.arg(0)
+            return current.fluent()
         for a in self._actions:
             if isinstance(a, up.model.action.InstantaneousAction):
                 remove_used_fluents(*a.preconditions)
                 for e in a.effects:
                     remove_used_fluents(e.fluent, e.value, e.condition)
-                    static_fluents.discard(e.fluent.fluent())
+                    static_fluents.discard(_effect_fluent(e.fluent))
                 if a.simulated_effect is not None:
                     # empty the set because a simulated effect reads all the fluents
                     unused_fluents.clear()
@@ -355,11 +362,11 @@ class Problem(  # type: ignore[misc]
                 for el in a.effects.values():
                     for e in el:
                         remove_used_fluents(e.fluent, e.value, e.condition)
-                        static_fluents.discard(e.fluent.fluent())
+                        static_fluents.discard(_effect_fluent(e.fluent))
                 for cel in a.continuous_effects.values():
                     for ce in cel:
                         remove_used_fluents(ce.fluent, ce.value, ce.condition)
-                        static_fluents.discard(ce.fluent.fluent())
+                        static_fluents.discard(_effect_fluent(ce.fluent))
                 for se in a.simulated_effects.values():
                     unused_fluents.clear()
                     for f in se.fluents:
@@ -370,15 +377,15 @@ class Problem(  # type: ignore[misc]
             remove_used_fluents(*ev.preconditions)
             for e in ev.effects:
                 remove_used_fluents(e.fluent, e.value, e.condition)
-                static_fluents.discard(e.fluent.fluent())
+                static_fluents.discard(_effect_fluent(e.fluent))
         for pro in self._processes:
             for e in pro.effects:
                 remove_used_fluents(e.fluent, e.value, e.condition)
-                static_fluents.discard(e.fluent.fluent())
+                static_fluents.discard(_effect_fluent(e.fluent))
         for el in self._timed_effects.values():
             for e in el:
                 remove_used_fluents(e.fluent, e.value, e.condition)
-                static_fluents.discard(e.fluent.fluent())
+                static_fluents.discard(_effect_fluent(e.fluent))
         for gl in self._timed_goals.values():
             remove_used_fluents(*gl)
         remove_used_fluents(*self._trajectory_constraints)

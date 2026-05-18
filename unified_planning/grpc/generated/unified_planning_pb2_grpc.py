@@ -3,9 +3,9 @@
 import grpc
 import warnings
 
-import unified_planning.grpc.generated.unified_planning_pb2 as unified__planning__pb2
+from unified_planning.grpc import unified_planning_pb2 as unified__planning_dot_grpc_dot_unified__planning__pb2
 
-GRPC_GENERATED_VERSION = '1.66.2'
+GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in unified_planning_pb2_grpc.py depends on'
+        + ' but the generated code in unified_planning/grpc/unified_planning_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -36,23 +36,23 @@ class UnifiedPlanningStub(object):
         """
         self.planAnytime = channel.unary_stream(
                 '/UnifiedPlanning/planAnytime',
-                request_serializer=unified__planning__pb2.PlanRequest.SerializeToString,
-                response_deserializer=unified__planning__pb2.PlanGenerationResult.FromString,
+                request_serializer=unified__planning_dot_grpc_dot_unified__planning__pb2.PlanRequest.SerializeToString,
+                response_deserializer=unified__planning_dot_grpc_dot_unified__planning__pb2.PlanGenerationResult.FromString,
                 _registered_method=True)
         self.planOneShot = channel.unary_unary(
                 '/UnifiedPlanning/planOneShot',
-                request_serializer=unified__planning__pb2.PlanRequest.SerializeToString,
-                response_deserializer=unified__planning__pb2.PlanGenerationResult.FromString,
+                request_serializer=unified__planning_dot_grpc_dot_unified__planning__pb2.PlanRequest.SerializeToString,
+                response_deserializer=unified__planning_dot_grpc_dot_unified__planning__pb2.PlanGenerationResult.FromString,
                 _registered_method=True)
         self.validatePlan = channel.unary_unary(
                 '/UnifiedPlanning/validatePlan',
-                request_serializer=unified__planning__pb2.ValidationRequest.SerializeToString,
-                response_deserializer=unified__planning__pb2.ValidationResult.FromString,
+                request_serializer=unified__planning_dot_grpc_dot_unified__planning__pb2.ValidationRequest.SerializeToString,
+                response_deserializer=unified__planning_dot_grpc_dot_unified__planning__pb2.ValidationResult.FromString,
                 _registered_method=True)
         self.compile = channel.unary_unary(
                 '/UnifiedPlanning/compile',
-                request_serializer=unified__planning__pb2.Problem.SerializeToString,
-                response_deserializer=unified__planning__pb2.CompilerResult.FromString,
+                request_serializer=unified__planning_dot_grpc_dot_unified__planning__pb2.Problem.SerializeToString,
+                response_deserializer=unified__planning_dot_grpc_dot_unified__planning__pb2.CompilerResult.FromString,
                 _registered_method=True)
 
 
@@ -98,23 +98,23 @@ def add_UnifiedPlanningServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'planAnytime': grpc.unary_stream_rpc_method_handler(
                     servicer.planAnytime,
-                    request_deserializer=unified__planning__pb2.PlanRequest.FromString,
-                    response_serializer=unified__planning__pb2.PlanGenerationResult.SerializeToString,
+                    request_deserializer=unified__planning_dot_grpc_dot_unified__planning__pb2.PlanRequest.FromString,
+                    response_serializer=unified__planning_dot_grpc_dot_unified__planning__pb2.PlanGenerationResult.SerializeToString,
             ),
             'planOneShot': grpc.unary_unary_rpc_method_handler(
                     servicer.planOneShot,
-                    request_deserializer=unified__planning__pb2.PlanRequest.FromString,
-                    response_serializer=unified__planning__pb2.PlanGenerationResult.SerializeToString,
+                    request_deserializer=unified__planning_dot_grpc_dot_unified__planning__pb2.PlanRequest.FromString,
+                    response_serializer=unified__planning_dot_grpc_dot_unified__planning__pb2.PlanGenerationResult.SerializeToString,
             ),
             'validatePlan': grpc.unary_unary_rpc_method_handler(
                     servicer.validatePlan,
-                    request_deserializer=unified__planning__pb2.ValidationRequest.FromString,
-                    response_serializer=unified__planning__pb2.ValidationResult.SerializeToString,
+                    request_deserializer=unified__planning_dot_grpc_dot_unified__planning__pb2.ValidationRequest.FromString,
+                    response_serializer=unified__planning_dot_grpc_dot_unified__planning__pb2.ValidationResult.SerializeToString,
             ),
             'compile': grpc.unary_unary_rpc_method_handler(
                     servicer.compile,
-                    request_deserializer=unified__planning__pb2.Problem.FromString,
-                    response_serializer=unified__planning__pb2.CompilerResult.SerializeToString,
+                    request_deserializer=unified__planning_dot_grpc_dot_unified__planning__pb2.Problem.FromString,
+                    response_serializer=unified__planning_dot_grpc_dot_unified__planning__pb2.CompilerResult.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -142,8 +142,8 @@ class UnifiedPlanning(object):
             request,
             target,
             '/UnifiedPlanning/planAnytime',
-            unified__planning__pb2.PlanRequest.SerializeToString,
-            unified__planning__pb2.PlanGenerationResult.FromString,
+            unified__planning_dot_grpc_dot_unified__planning__pb2.PlanRequest.SerializeToString,
+            unified__planning_dot_grpc_dot_unified__planning__pb2.PlanGenerationResult.FromString,
             options,
             channel_credentials,
             insecure,
@@ -169,8 +169,8 @@ class UnifiedPlanning(object):
             request,
             target,
             '/UnifiedPlanning/planOneShot',
-            unified__planning__pb2.PlanRequest.SerializeToString,
-            unified__planning__pb2.PlanGenerationResult.FromString,
+            unified__planning_dot_grpc_dot_unified__planning__pb2.PlanRequest.SerializeToString,
+            unified__planning_dot_grpc_dot_unified__planning__pb2.PlanGenerationResult.FromString,
             options,
             channel_credentials,
             insecure,
@@ -196,8 +196,8 @@ class UnifiedPlanning(object):
             request,
             target,
             '/UnifiedPlanning/validatePlan',
-            unified__planning__pb2.ValidationRequest.SerializeToString,
-            unified__planning__pb2.ValidationResult.FromString,
+            unified__planning_dot_grpc_dot_unified__planning__pb2.ValidationRequest.SerializeToString,
+            unified__planning_dot_grpc_dot_unified__planning__pb2.ValidationResult.FromString,
             options,
             channel_credentials,
             insecure,
@@ -223,8 +223,8 @@ class UnifiedPlanning(object):
             request,
             target,
             '/UnifiedPlanning/compile',
-            unified__planning__pb2.Problem.SerializeToString,
-            unified__planning__pb2.CompilerResult.FromString,
+            unified__planning_dot_grpc_dot_unified__planning__pb2.Problem.SerializeToString,
+            unified__planning_dot_grpc_dot_unified__planning__pb2.CompilerResult.FromString,
             options,
             channel_credentials,
             insecure,

@@ -19,7 +19,7 @@ import unified_planning.model.types
 import unified_planning.environment
 import unified_planning.model.walkers as walkers
 from unified_planning.model import Fluent
-from unified_planning.model.types import BOOL, DERIVED_BOOL, TIME, _UserType, _IntType, _ArrayType
+from unified_planning.model.types import BOOL, DERIVED_BOOL, TIME, _UserType, _IntType, _ArrayType, is_compatible_type
 from unified_planning.model.fnode import FNode
 from unified_planning.model.operators import OperatorKind
 from unified_planning.exceptions import UPTypeError
@@ -505,6 +505,15 @@ class TypeChecker(walkers.dag.DagWalker):
             return None
         return args[0]
 
+    @walkers.handles(OperatorKind.ARRAY_READ)
+    def walk_array_read(
+            self, expression, args, **kwargs):
+        return expression.arg(0).type.elements_type
+
+    @walkers.handles(OperatorKind.ARRAY_WRITE)
+    def walk_array_write(self, expression, args, **kwargs):
+        return expression.arg(0).type.elements_type
+
     @walkers.handles(OperatorKind.SET_MEMBER)
     def walk_member(
         self, expression: FNode, args: List["unified_planning.model.types.Type"]
@@ -515,7 +524,7 @@ class TypeChecker(walkers.dag.DagWalker):
         set_type = args[1]
         if element_type is None:
             return None
-        if element_type != set_type.elements_type:
+        if not is_compatible_type(element_type, set_type.elements_type):
             return None
         return BOOL
 
@@ -527,7 +536,7 @@ class TypeChecker(walkers.dag.DagWalker):
         assert expression.is_set_subseteq()
         set1 = args[0]
         set2 = args[1]
-        if set1.elements_type != set2.elements_type:
+        if not is_compatible_type(set1.elements_type, set2.elements_type):
             return None
         return BOOL
 
@@ -539,7 +548,7 @@ class TypeChecker(walkers.dag.DagWalker):
         assert expression.is_set_disjoint()
         set1 = args[0]
         set2 = args[1]
-        if set1.elements_type != set2.elements_type:
+        if not is_compatible_type(set1.elements_type, set2.elements_type):
             return None
         # fer alguna altra comprovacio?
         return BOOL

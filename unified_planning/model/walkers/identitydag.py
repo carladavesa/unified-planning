@@ -107,6 +107,12 @@ class IdentityDagWalker(walkers.dag.DagWalker):
     ) -> FNode:
         return self.manager.Array(expression.array_constant_value())
 
+    def walk_array_read(self, expression: FNode, args: List[FNode], **kwargs) -> FNode:
+        return self.manager.ArrayRead(args[0], args[1])
+
+    def walk_array_write(self, expression: FNode, args: List[FNode], **kwargs) -> FNode:
+        return self.manager.ArrayWrite(args[0], args[1])
+
     def walk_param_exp(self, expression: FNode, args: List[FNode], **kwargs) -> FNode:
         return self.manager.ParameterExp(expression.parameter())
 

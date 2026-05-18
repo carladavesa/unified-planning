@@ -76,12 +76,13 @@ class Effect:
         forall: Iterable[Union["up.model.variable.Variable", "up.model.range_variable.RangeVariable"]] = tuple(),
     ):
         fve = fluent.environment.free_vars_extractor
-        fluents_in_fluent = set(fve.get(fluent))
-        fluents_in_fluent.remove(fluent)
-        if fluents_in_fluent:
-            raise UPProblemDefinitionError(
-                f"The fluent: {fluent} contains other fluents in his arguments: {fluents_in_fluent}"
-            )
+        if not fluent.is_array_write():
+            fluents_in_fluent = set(fve.get(fluent))
+            fluents_in_fluent.remove(fluent)
+            if fluents_in_fluent:
+                raise UPProblemDefinitionError(
+                    f"The fluent: {fluent} contains other fluents in his arguments: {fluents_in_fluent}"
+                )
         self._fluent = fluent
         self._value = value
         self._condition = condition
@@ -100,7 +101,7 @@ class Effect:
                 if v in free_vars and v not in seen:
                     seen.add(v)
                     assert isinstance(
-                        v, up.model.variable.Variable
+                        v, (up.model.variable.Variable, up.model.range_variable.RangeVariable)
                     ), "Typing not respected"
                     yield v
                 elif isinstance(v, up.model.range_variable.RangeVariable):

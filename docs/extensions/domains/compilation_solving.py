@@ -17,7 +17,7 @@ COMPILATION_PIPELINES = {
         CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
         CompilationKind.ARRAYS_REMOVING,
         CompilationKind.INTEGERS_REMOVING,
-        #CompilationKind.USERTYPE_FLUENTS_REMOVING,
+        CompilationKind.USERTYPE_FLUENTS_REMOVING,
     ],
     'log': [
         CompilationKind.INT_PARAMETER_ACTIONS_REMOVING,
@@ -43,18 +43,24 @@ COMPILATION_PIPELINES = {
     'sc' : [
         CompilationKind.SETS_REMOVING,
         CompilationKind.COUNT_REMOVING,
-        #CompilationKind.USERTYPE_FLUENTS_REMOVING,
+        CompilationKind.USERTYPE_FLUENTS_REMOVING,
     ],
     'sci' : [
         CompilationKind.SETS_REMOVING,
         CompilationKind.COUNT_INT_REMOVING,
         CompilationKind.INTEGERS_REMOVING,
-        #CompilationKind.USERTYPE_FLUENTS_REMOVING,
+        CompilationKind.USERTYPE_FLUENTS_REMOVING,
     ],
     'scin' : [ # numeric
         CompilationKind.SETS_REMOVING,
         CompilationKind.COUNT_INT_REMOVING,
-        #CompilationKind.USERTYPE_FLUENTS_REMOVING,
+        CompilationKind.USERTYPE_FLUENTS_REMOVING,
+    ],
+    'all' : [
+        CompilationKind.SETS_REMOVING,
+        CompilationKind.COUNT_REMOVING,
+        CompilationKind.USERTYPE_FLUENTS_REMOVING,
+        CompilationKind.INTEGERS_REMOVING,
     ],
     'None': []
 }
@@ -82,8 +88,23 @@ def print_up_problem_size(problem, name=""):
     print(f"Characters: {size}")
     print(f"Lines: {len(problem_str.splitlines())}")
 
+
+def _print_problem_snapshot(problem, label: str):
+    """Print a labelled snapshot of the problem in UP format with size stats."""
+    w = 60
+    print(f"\n{'#' * w}")
+    print(f"# {label:<{w - 4}} #")
+    print(f"{'#' * w}")
+    print(f"  Actions : {len(problem.actions)}")
+    problem_str = str(problem)
+    print(f"  Lines   : {len(problem_str.splitlines())}")
+    print()
+    print(problem_str)
+
+
 def compile_problem(
-        problem: "Problem", compilation_pipeline: str, timeout: int = DEFAULT_TIMEOUT
+        problem: "Problem", compilation_pipeline: str, timeout: int = DEFAULT_TIMEOUT,
+        verbose: bool = False,
 ) -> tuple["Problem", List, float]:
     """
     Compile problem through specified pipeline.
@@ -92,6 +113,7 @@ def compile_problem(
         problem: Original planning problem
         compilation_pipeline: Name of pipeline from COMPILATION_PIPELINES
         timeout: Timeout in seconds
+        verbose: If True, print the full UP problem before and after each compilation step
 
     Returns:
         Tuple of (compiled_problem, compilation_results, compilation_time)
@@ -115,6 +137,9 @@ def compile_problem(
     print(f"Compilation Pipeline: {compilation_pipeline}")
     print(f"{'=' * 60}")
 
+    if verbose:
+        _print_problem_snapshot(problem, "BEFORE COMPILATION")
+
     start_time = time.time()
     results = []
 
@@ -136,7 +161,9 @@ def compile_problem(
                 results.append(result)
                 problem = result.problem
 
-        #print(problem)
+            if verbose:
+                _print_problem_snapshot(problem, f"AFTER STEP {i}/{len(compilation_kinds)}: {ck.name}")
+
         print_up_problem_size(problem)
         signal.alarm(0)  # Cancel timeout
         compilation_time = time.time() - start_time
@@ -260,6 +287,7 @@ def compile_and_solve(
         solver: str,
         compilation: str = 'none',
         timeout: int = DEFAULT_TIMEOUT,
+        verbose: bool = False,
 ):
     """
     Compile and solve a planning problem.
@@ -269,6 +297,7 @@ def compile_and_solve(
         solver: Name of solver/planner to use
         compilation: Name of compilation pipeline (default: 'none')
         timeout: Timeout in seconds (default: 1800)
+        verbose: If True, print the full UP problem before and after each compilation step
 
     Raises:
         ValueError: If compilation pipeline is invalid
@@ -281,7 +310,7 @@ def compile_and_solve(
 
     try:
         # Compilation
-        compiled_problem, comp_results, comp_time = compile_problem(problem, compilation, timeout)
+        compiled_problem, comp_results, comp_time = compile_problem(problem, compilation, timeout, verbose=verbose)
 
         # Print compiled problem
         print(f"\n{'=' * 60}")
